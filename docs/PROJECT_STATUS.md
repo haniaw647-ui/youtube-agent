@@ -4,7 +4,18 @@ Living document — update this in the same commit/session as any implementation
 
 ## Where things stand
 
-**Phase 2 (real topic/research/script/QA pipeline) complete.** Phases 0, 1, and 2 are all done and verified end-to-end against real production infrastructure — no mocks. One thing outstanding: a real live demo run needs a tenant with a connected Anthropic (and Tavily) key, which needs your input — see "Immediate next steps."
+**Phase 3 (voice-over and visual generation/collection) complete.** Phases 0 through 3 are all done, deployed, and passing their test suites. Two things now waiting on you before a real live demo can run — a connected Anthropic/Tavily/ElevenLabs/Pexels tenant, and Cloudflare R2 credentials — see "Immediate next steps."
+
+### Phase 3 — voice-over and visual generation/collection
+- **Cloudflare R2 storage abstraction** (`providers/storage/r2.py`, S3-compatible via `aioboto3`) — platform-level credentials (not tenant BYO, since object storage is infra the platform provides regardless of which AI providers a tenant picks)
+- **ElevenLabs + OpenAI TTS voice adapters**, **Pexels visual adapter** (the default stock source — free, zero licensing ambiguity)
+- `script_writing`'s output now includes its parsed scene segments (narration + visual_note per scene) in `job_stages.output_ref`, so `visual_generation` can read scene-level detail back out without re-parsing the concatenated script text
+- **Real `voice_over` stage**: synthesizes narration for the QA-passed script (provider selectable per channel via `provider_config.voice_provider`, default ElevenLabs), uploads to R2, records the asset
+- **Real `visual_generation` stage**: searches Pexels per scene, downloads and uploads each image to R2, records one `assets` row per scene with `license_type` populated — this is the copyright-audit-trail column from ARCHITECTURE.md §11, now actually populated rather than just designed
+- **Unit tests** for all four new adapters (mocked HTTP/S3, no credentials needed for CI)
+- **Deployed**: all four services redeployed and healthy; `/health` verified live
+
+**R2 credentials are the one thing I can't provision myself** — no Cloudflare connector is available in this environment, unlike Supabase/Railway. `R2_*` settings exist in code and are read from env vars, but nothing has actually been uploaded to a real bucket yet.
 
 ### Phase 2 — real text pipeline
 - **Provider adapters**: `providers/llm/anthropic.py` (Claude), `providers/search/tavily.py` — both behind small swappable interfaces per the provider-swappable principle
@@ -20,8 +31,6 @@ Living document — update this in the same commit/session as any implementation
 - **Minimal tenant dashboard** (`/dashboard`): cookie-based login against Supabase Auth, an approval queue showing topic candidates or script content inline, approve/reject actions. Dashboard tech decision finalized: server-rendered Jinja2/HTMX, per the ARCHITECTURE.md §3 default.
 - **Unit tests** for scoring logic, JSON-response parsing (LLMs wrap "JSON only" responses in code fences anyway), and both provider adapters — all mocked, no API keys needed, safe for CI.
 - **Deployed**: all four services redeployed and healthy on Railway; `/health` and `/dashboard/login` both verified live.
-
-### Phase 1 — tenant auth, RLS, orchestrator core
 
 ### Phase 0 — scaffolding
 - Repo layout, FastAPI skeleton, Celery app (`light`/`heavy` queues), Docker Compose, Alembic, CI (ruff + mypy + pytest on push)
@@ -75,12 +84,13 @@ Historical: all six planning docs below reflect the current design (a multi-tena
 
 ## Immediate next steps
 
-1. **You, to unblock a live demo of Phase 2**: get a tenant signed up (email confirmed) with an Anthropic key and a Tavily key connected via the API key vault, so a real topic → research → script → QA run can actually execute end-to-end. Not needed to keep building (Phase 3 doesn't depend on this), but needed to *see* Phase 2 work rather than just trust the tests.
-2. **You, still not started**: begin the Google Cloud OAuth consent screen → external/production verification process. This remains the **single longest external lead-time item in the whole project** and directly blocks onboarding any real (non-test) tenant — see ARCHITECTURE.md §9 and IMPLEMENTATION_PLAN.md Phase 0/6. A placeholder privacy policy page is enough to start the process.
-3. **You**: begin Meta Business Manager + WhatsApp Business Cloud API setup (API_REQUIREMENTS.md §1).
-4. **You**: add `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SECRET_KEY`, `ENCRYPTION_KEY` as GitHub Actions repo secrets (same values as your local `.env`) so CI can actually run the isolation test on every push.
-5. **Legal, before real tenants onboard**: Terms of Service, Privacy Policy, Acceptable Use Policy (ARCHITECTURE.md §13).
-6. **Me** (once you confirm): start Phase 3 — voice-over and visual generation/collection.
+1. **You, to unblock any live demo (Phase 2 or 3)**: get a tenant signed up (email confirmed) with Anthropic + Tavily + ElevenLabs (or OpenAI) + Pexels keys connected via the API key vault, so a real topic → research → script → QA → voice → visuals run can actually execute end-to-end.
+2. **You, to unblock Phase 3 specifically**: create a Cloudflare account (if you don't have one), an R2 bucket, and an R2 API token (Account ID, Access Key ID, Secret Access Key), and give me the bucket name + credentials — I have no Cloudflare connector in this environment, unlike Supabase/Railway, so this one genuinely needs your hands. I'll wire it into Railway the same way I did `DATABASE_URL`.
+3. **You, still not started**: begin the Google Cloud OAuth consent screen → external/production verification process. This remains the **single longest external lead-time item in the whole project** and directly blocks onboarding any real (non-test) tenant — see ARCHITECTURE.md §9 and IMPLEMENTATION_PLAN.md Phase 0/6. A placeholder privacy policy page is enough to start the process.
+4. **You**: begin Meta Business Manager + WhatsApp Business Cloud API setup (API_REQUIREMENTS.md §1).
+5. **You**: add `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SECRET_KEY`, `ENCRYPTION_KEY` as GitHub Actions repo secrets (same values as your local `.env`) so CI can actually run the isolation test on every push.
+6. **Legal, before real tenants onboard**: Terms of Service, Privacy Policy, Acceptable Use Policy (ARCHITECTURE.md §13).
+7. **Me** (once you confirm): start Phase 4 — video assembly, subtitles, background music.
 
 ## Known risks to keep in view
 
@@ -97,4 +107,5 @@ Historical: all six planning docs below reflect the current design (a multi-tena
 - **2026-08-17**: Phase 0 complete — pushed to [haniaw647-ui/youtube-agent](https://github.com/haniaw647-ui/youtube-agent), deployed `api` to Railway, verified `/health` live in production.
 - **2026-08-17**: Real `DATABASE_URL` wired into Railway and local `.env`, connection verified end-to-end (local + deployed).
 - **2026-08-17**: Phase 1 complete — 13-table multi-tenant schema with RLS applied to production; `tenant_session`/`service_session` DB layer proven with a real cross-tenant smoke test before building on it; Supabase Auth signup/login wired; channel CRUD + BYO API key vault; 15-stage stub Celery pipeline with parallel join and approval-gate pause/resume; automated isolation test passing against production; `api`/`worker-light`/`worker-heavy` all deployed and healthy on Railway (after fixing an OOM crash-loop in `worker-light` from Celery's default CPU-count concurrency).
-- **2026-08-17**: Phase 2 complete — Anthropic + Tavily provider adapters; real topic_generation/topic_scoring/research/script_writing/script_qa stages replacing the Phase 1 stubs; script_qa's capped revision loop with human escalation; fixed a job_stages row-targeting bug the revision loop exposed; minimal server-rendered tenant dashboard with a working approval queue; unit tests for scoring/parsing/adapters (mocked, no API keys needed); redeployed and verified live. Next: Phase 3 (voice-over and visual generation/collection) — but a live demo of Phase 2 itself is waiting on a tenant with real Anthropic/Tavily keys connected.
+- **2026-08-17**: Phase 2 complete — Anthropic + Tavily provider adapters; real topic_generation/topic_scoring/research/script_writing/script_qa stages replacing the Phase 1 stubs; script_qa's capped revision loop with human escalation; fixed a job_stages row-targeting bug the revision loop exposed; minimal server-rendered tenant dashboard with a working approval queue; unit tests for scoring/parsing/adapters (mocked, no API keys needed); redeployed and verified live.
+- **2026-08-17**: Phase 3 complete — R2 storage abstraction; ElevenLabs/OpenAI TTS voice adapters and Pexels visual adapter; real voice_over and visual_generation stages populating `assets.license_type` per image; script_writing now surfaces its parsed segments for downstream stages to consume; unit tests for all four new adapters; redeployed and verified live. Next: Phase 4 (video assembly, subtitles, music) — but no live demo of Phase 2 or 3 has run yet, waiting on a connected tenant and R2 credentials from the user.
