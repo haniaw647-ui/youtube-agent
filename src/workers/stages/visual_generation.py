@@ -1,22 +1,15 @@
-import httpx
 from sqlalchemy import text
 
 from src.orchestrator.db import service_session
 from src.orchestrator.provider_keys import get_tenant_key
 from src.orchestrator.storage import get_storage_provider
 from src.providers.visual.pexels import PexelsProvider
+from src.workers.stages._http import download
 
 # Stock is the default for every channel — free, zero licensing ambiguity
 # (API_REQUIREMENTS.md §2). Generative visuals are opt-in, added only when a
 # real tenant needs them (ARCHITECTURE.md §15's deliberate scope cut).
 DEFAULT_PROVIDER = "pexels"
-
-
-async def _download(url: str) -> bytes:
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(url)
-    resp.raise_for_status()
-    return resp.content
 
 
 async def run(job_id: str, tenant_id: str) -> dict:
@@ -59,7 +52,7 @@ async def run(job_id: str, tenant_id: str) -> dict:
             if not results:
                 continue
             result = results[0]
-            image_bytes = await _download(result.url)
+            image_bytes = await download(result.url)
 
             key = (
                 f"{tenant_id}/{job_row['channel_id']}/{job_id}/visuals/"

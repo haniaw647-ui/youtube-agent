@@ -9,10 +9,12 @@ from src.models.pipeline import PIPELINE_STAGES
 from src.orchestrator.db import service_session
 from src.workers.stages import (
     background_music,
+    metadata_generation,
     research,
     script_qa,
     script_writing,
     subtitle_burn_in,
+    thumbnail_generation,
     topic_generation,
     topic_scoring,
     video_assembly,
@@ -36,7 +38,7 @@ STAGE_AFTER_PARALLEL = "video_assembly"
 
 # Real implementations, added stage-by-stage as each phase replaces the stub.
 # Anything not listed here still gets the stub behavior (fake artifact, marks
-# done) — that's thumbnail_generation onward, due in Phase 5+.
+# done) — that's final_qa onward, due in Phase 6+.
 StageFn = Callable[[str, str], Awaitable[dict]]
 STAGE_IMPLEMENTATIONS: dict[str, StageFn] = {
     "topic_generation": topic_generation.run,
@@ -49,6 +51,8 @@ STAGE_IMPLEMENTATIONS: dict[str, StageFn] = {
     "video_assembly": video_assembly.run,
     "subtitle_burn_in": subtitle_burn_in.run,
     "background_music": background_music.run,
+    "thumbnail_generation": thumbnail_generation.run,
+    "metadata_generation": metadata_generation.run,
 }
 
 
