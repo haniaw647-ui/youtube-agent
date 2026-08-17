@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}API Keys{% endblock %}
+{% block content %}
+<h2>API keys</h2>
+<p>Bring your own provider keys — the platform never bills for AI usage. Keys are encrypted at rest and never shown in full once saved.</p>
+{% if saved %}<p style="color: #0a7d2c;">Saved key for {{ saved }}.</p>{% endif %}
+
+<div class="card">
+  <h3>Add / update a key</h3>
+  <form method="post" action="/dashboard/api-keys">
+    <select name="provider" style="padding: 0.4rem; margin-bottom: 0.5rem; width: 100%;">
+      {% for p in providers %}
+        <option value="{{ p }}">{{ p }}</option>
+      {% endfor %}
+    </select>
+    <input type="password" name="api_key" placeholder="API key" required>
+    <button type="submit">Save key</button>
+  </form>
+</div>
+
+<table>
+  <tr><th>Provider</th><th>Key</th><th>Status</th></tr>
+  {% for p in providers %}
+  <tr>
+    <td>{{ p }}</td>
+    <td>{{ keys[p].masked_key if p in keys else '— not set —' }}</td>
+    <td>{{ keys[p].status if p in keys else '' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

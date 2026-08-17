@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Sign up{% endblock %}
+{% block content %}
+<div class="card" style="max-width: 360px;">
+  <h2>Sign up</h2>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% if confirm_email %}
+    <p>Check <strong>{{ confirm_email }}</strong> for a confirmation link, then <a href="/dashboard/login">log in</a>.</p>
+  {% else %}
+  <form method="post" action="/dashboard/signup">
+    <input type="text" name="display_name" placeholder="Your name or channel brand" required>
+    <input type="email" name="email" placeholder="Email" required>
+    <input type="password" name="password" placeholder="Password" required minlength="6">
+    <button type="submit">Create account</button>
+  </form>
+  <p style="margin-top: 1rem;"><a href="/dashboard/login">Already have an account? Log in</a></p>
+  {% endif %}
+</div>
+{% endblock %}

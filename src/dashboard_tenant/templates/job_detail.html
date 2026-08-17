@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Job {{ job.id if job else '' }}{% endblock %}
+{% block content %}
+{% if not job %}
+  <p class="error">Job not found.</p>
+{% else %}
+<h2>{{ job.id }}</h2>
+<p><strong>Channel:</strong> {{ job.channel_name }} &nbsp; <strong>Status:</strong> {{ job.overall_status }}</p>
+{% if job.title %}<p><strong>Title:</strong> {{ job.title }}</p>{% endif %}
+{% if job.description %}<p>{{ job.description }}</p>{% endif %}
+
+<table>
+  <tr><th>Stage</th><th>Status</th><th>Started</th><th>Finished</th><th>Error</th></tr>
+  {% for s in stages %}
+  <tr>
+    <td>{{ s.stage }}</td>
+    <td>
+      {% if s.status == 'done' %}✅
+      {% elif s.status == 'running' %}⏳
+      {% elif s.status == 'awaiting_approval' %}⏸️
+      {% elif s.status == 'failed' %}❌
+      {% elif s.status == 'not_started' %}—
+      {% else %}{{ s.status }}
+      {% endif %}
+      {{ s.status }}
+    </td>
+    <td>{{ s.started_at.strftime('%Y-%m-%d %H:%M') if s.started_at else '—' }}</td>
+    <td>{{ s.finished_at.strftime('%Y-%m-%d %H:%M') if s.finished_at else '—' }}</td>
+    <td class="error">{{ s.error or '' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+{% if job.overall_status == 'awaiting_approval' %}
+  <p><a href="/dashboard/approvals">Review pending approval →</a></p>
+{% endif %}
+<p><a href="/dashboard/jobs">← Back to jobs</a></p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Jobs{% endblock %}
+{% block content %}
+<h2>Jobs</h2>
+
+<form method="get" action="/dashboard/jobs" style="max-width: 300px;">
+  <select name="channel_id" onchange="this.form.submit()" style="padding: 0.4rem; margin-bottom: 0.5rem; width: 100%;">
+    <option value="">All channels</option>
+    {% for c in channels %}
+      <option value="{{ c.id }}" {% if selected_channel_id == c.id|string %}selected{% endif %}>{{ c.name }}</option>
+    {% endfor %}
+  </select>
+</form>
+
+{% if not jobs %}
+  <p>No jobs yet — start one from the <a href="/dashboard/channels">Channels</a> page.</p>
+{% endif %}
+
+<table>
+  <tr><th>Job</th><th>Channel</th><th>Title</th><th>Current stage</th><th>Status</th><th>Created</th></tr>
+  {% for j in jobs %}
+  <tr>
+    <td><a href="/dashboard/jobs/{{ j.id }}">{{ j.id }}</a></td>
+    <td>{{ j.channel_name }}</td>
+    <td>{{ j.title or '—' }}</td>
+    <td>{{ j.current_stage }}</td>
+    <td>{{ j.overall_status }}</td>
+    <td>{{ j.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

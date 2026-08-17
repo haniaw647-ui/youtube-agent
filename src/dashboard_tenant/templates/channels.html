@@ -5,8 +5,27 @@
 {% if connected %}<p style="color: #0a7d2c;">YouTube channel connected successfully.</p>{% endif %}
 {% if error %}<p class="error">Connection failed ({{ error }}). Please try again.</p>{% endif %}
 
+<div class="card">
+  <h3>New channel</h3>
+  <form method="post" action="/dashboard/channels/create">
+    <input type="text" name="name" placeholder="Channel name" required>
+    <input type="text" name="niche" placeholder="Niche (e.g. personal finance)">
+    <input type="text" name="audience" placeholder="Target audience">
+    <input type="text" name="style" placeholder="Style / tone notes">
+    <select name="language" style="padding: 0.4rem; margin-bottom: 0.5rem; width: 100%;">
+      <option value="en" selected>English</option>
+      <option value="es">Spanish</option>
+      <option value="fr">French</option>
+      <option value="de">German</option>
+      <option value="hi">Hindi</option>
+      <option value="ur">Urdu</option>
+    </select>
+    <button type="submit">Create channel</button>
+  </form>
+</div>
+
 {% if not channels %}
-  <p>No channels yet — create one via the API (<code>POST /channels</code>) to get started.</p>
+  <p>No channels yet — create your first one above.</p>
 {% endif %}
 
 {% for c in channels %}
@@ -28,6 +47,11 @@
            value="{{ c.whatsapp_recipient_number or '' }}">
     <button type="submit">Save number</button>
   </form>
+
+  <form method="post" action="/dashboard/channels/{{ c.id }}/jobs/create" style="margin-top: 1rem;">
+    <button type="submit">Start new video job</button>
+  </form>
+  <a href="/dashboard/jobs?channel_id={{ c.id }}">View jobs for this channel</a>
 </div>
 {% endfor %}
 {% endblock %}
