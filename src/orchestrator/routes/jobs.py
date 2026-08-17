@@ -8,6 +8,7 @@ from sqlalchemy import text
 
 from src.models.pipeline import PIPELINE_STAGES
 from src.orchestrator.db import tenant_session
+from src.orchestrator.guardrails import TenantLimitExceeded, check_tenant_job_limits
 from src.orchestrator.supabase_auth import get_current_tenant_id
 from src.workers.stage_runner import enqueue_stage, resume_after_approval
 
@@ -42,6 +43,11 @@ class ApproveRequest(BaseModel):
 async def create_job(
     channel_id: uuid.UUID, tenant_id: uuid.UUID = Depends(get_current_tenant_id)
 ) -> dict[str, Any]:
+    try:
+        await check_tenant_job_limits(tenant_id)
+    except TenantLimitExceeded as e:
+        raise HTTPException(status_code=429, detail=e.detail) from e
+
     async with tenant_session(tenant_id) as session:
         channel = (
             (

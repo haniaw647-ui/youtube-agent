@@ -1,0 +1,18 @@
+{% extends "base_admin.html" %}
+{% block title %}Failures{% endblock %}
+{% block content %}
+<h2>Failed jobs (last 100)</h2>
+{% if not failures %}<p>No failures across any tenant right now.</p>{% endif %}
+<table>
+  <tr><th>Job</th><th>Tenant</th><th>Channel</th><th>Failed stage</th><th>Error</th></tr>
+  {% for f in failures %}
+  <tr>
+    <td>{{ f.id }}</td>
+    <td>{{ f.tenant_name }}</td>
+    <td>{{ f.channel_name }}</td>
+    <td>{{ f.failed_stage or '—' }}</td>
+    <td class="error">{{ f.error or '(no error text — likely a rejected approval)' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

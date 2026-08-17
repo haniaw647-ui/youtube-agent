@@ -44,6 +44,19 @@ class Settings(BaseSettings):
     # See docs/PROJECT_STATUS.md for the exact body text submitted for approval.
     whatsapp_template_name: str = "job_status_update"
 
+    # Phase 9 cost/safety guardrails (ARCHITECTURE.md §8) — protect a shared
+    # worker fleet and the shared YouTube quota from one tenant's runaway usage.
+    max_jobs_per_tenant_per_day: int = 5
+    max_concurrent_jobs_per_tenant: int = 2
+    youtube_quota_alert_threshold: float = 0.8
+
+    # Internal ops dashboard (Phase 9) — a single shared operator credential,
+    # not a per-tenant Supabase Auth account. Deliberately avoids needing
+    # SUPABASE_SERVICE_ROLE_KEY: cross-tenant reads already go through
+    # service_session() (direct Postgres role, bypasses RLS) — the only new
+    # thing this needs is a way to gate who can reach those routes at all.
+    admin_dashboard_password: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

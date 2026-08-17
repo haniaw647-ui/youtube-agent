@@ -4,6 +4,7 @@
 <h2>Channels</h2>
 {% if connected %}<p class="success">YouTube channel connected successfully.</p>{% endif %}
 {% if error %}<p class="error">Connection failed ({{ error }}). Please try again.</p>{% endif %}
+{% if job_error %}<p class="error">{{ job_error }}</p>{% endif %}
 
 <div class="card">
   <h3>New channel</h3>

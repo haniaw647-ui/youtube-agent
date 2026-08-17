@@ -1,0 +1,12 @@
+{% extends "base_admin.html" %}
+{% block title %}Ops login{% endblock %}
+{% block content %}
+<div class="card" style="max-width: 360px;">
+  <h2>Internal ops login</h2>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post" action="/admin/login">
+    <input type="password" name="password" placeholder="Operator password" required>
+    <button type="submit">Log in</button>
+  </form>
+</div>
+{% endblock %}

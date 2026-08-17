@@ -8,6 +8,13 @@ class UploadResult:
     url: str
 
 
+@dataclass
+class VideoStats:
+    view_count: int
+    like_count: int
+    comment_count: int
+
+
 class YouTubeProvider(ABC):
     @abstractmethod
     async def upload_video(
@@ -20,4 +27,8 @@ class YouTubeProvider(ABC):
         privacy_status: str,
         thumbnail_bytes: bytes | None = None,
     ) -> UploadResult:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_video_stats(self, refresh_token: str, video_id: str) -> VideoStats:
         raise NotImplementedError

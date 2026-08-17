@@ -1,0 +1,23 @@
+{% extends "base_admin.html" %}
+{% block title %}Tenants{% endblock %}
+{% block content %}
+<h2>Tenants</h2>
+<p>Provider key status only — values stay encrypted and are never decrypted here.</p>
+{% if not tenants %}<p>No tenants yet.</p>{% endif %}
+{% for t in tenants %}
+<div class="card">
+  <h3>{{ t.display_name or t.id }}</h3>
+  <p style="color: var(--text-muted);">joined {{ t.created_at.strftime('%Y-%m-%d') }}</p>
+  {% if t.provider_keys %}
+    <table>
+      <tr><th>Provider</th><th>Status</th></tr>
+      {% for k in t.provider_keys %}
+      <tr><td>{{ k.provider }}</td><td>{{ k.status }}</td></tr>
+      {% endfor %}
+    </table>
+  {% else %}
+    <p>No provider keys connected yet.</p>
+  {% endif %}
+</div>
+{% endfor %}
+{% endblock %}

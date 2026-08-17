@@ -1,0 +1,17 @@
+{% extends "base_admin.html" %}
+{% block title %}YouTube quota{% endblock %}
+{% block content %}
+<h2>Platform-wide YouTube quota</h2>
+<p>Shared across every tenant on the platform's single Google Cloud project (ARCHITECTURE.md §9) — resets at UTC midnight.</p>
+<div class="card">
+  <h3>Today's usage</h3>
+  <p style="font-size: 1.4rem;">{{ used }} / {{ total }} units ({{ pct }}%)</p>
+  <div style="background: var(--accent-light); border-radius: 4px; height: 14px;">
+    <div style="background: {% if over_threshold %}var(--error){% else %}var(--accent){% endif %}; height: 100%; border-radius: 4px; width: {{ pct if pct <= 100 else 100 }}%;"></div>
+  </div>
+  {% if over_threshold %}
+  <p class="error" style="margin-top: 0.75rem;">Above the {{ (threshold * 100) | round }}% alert threshold — request a quota increase from Google before this becomes a hard blocker on uploads.</p>
+  {% endif %}
+  <p style="margin-top: 0.75rem; color: var(--text-muted);">One upload costs ~1,600 units — roughly {{ (total / 1600) | round(0, 'floor') | int }} uploads/day across all tenants combined on the default quota.</p>
+</div>
+{% endblock %}

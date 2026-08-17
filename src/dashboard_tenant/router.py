@@ -2,6 +2,7 @@ import json
 import uuid
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -11,6 +12,7 @@ from sqlalchemy import text
 from src.dashboard_tenant.auth import SESSION_COOKIE, require_tenant
 from src.models.pipeline import PIPELINE_STAGES
 from src.orchestrator.db import tenant_session
+from src.orchestrator.guardrails import TenantLimitExceeded, check_tenant_job_limits
 from src.orchestrator.routes.channels import DEFAULT_APPROVAL_GATES
 from src.orchestrator.routes.tenant_keys import SUPPORTED_PROVIDERS
 from src.orchestrator.security import decrypt, encrypt, mask
@@ -95,6 +97,7 @@ async def channels_list(
     tenant_id=Depends(require_tenant),
     error: str | None = None,
     connected: str | None = None,
+    job_error: str | None = None,
 ) -> HTMLResponse:
     async with tenant_session(tenant_id) as session:
         channels = (
@@ -110,7 +113,9 @@ async def channels_list(
             .all()
         )
     return templates.TemplateResponse(
-        request, "channels.html", {"channels": channels, "error": error, "connected": connected}
+        request,
+        "channels.html",
+        {"channels": channels, "error": error, "connected": connected, "job_error": job_error},
     )
 
 
@@ -161,6 +166,13 @@ async def set_whatsapp_number(
 async def create_job_submit(
     channel_id: str, tenant_id=Depends(require_tenant)
 ) -> RedirectResponse:
+    try:
+        await check_tenant_job_limits(tenant_id)
+    except TenantLimitExceeded as e:
+        return RedirectResponse(
+            f"/dashboard/channels?job_error={quote(e.detail)}", status_code=303
+        )
+
     async with tenant_session(tenant_id) as session:
         channel = (
             (
@@ -172,7 +184,9 @@ async def create_job_submit(
             .first()
         )
         if channel is None:
-            return RedirectResponse("/dashboard/channels?error=channel+not+found", status_code=303)
+            return RedirectResponse(
+                "/dashboard/channels?job_error=Channel+not+found", status_code=303
+            )
 
         seq = (await session.execute(text("SELECT nextval('job_id_seq')"))).scalar_one()
         job_id = f"job_{datetime.now().year}_{seq:05d}"
@@ -264,6 +278,55 @@ async def job_detail(
         for name in PIPELINE_STAGES
     ]
     return templates.TemplateResponse(request, "job_detail.html", {"job": job, "stages": stages})
+
+
+@router.get("/analytics", response_class=HTMLResponse)
+async def analytics_list(request: Request, tenant_id=Depends(require_tenant)) -> HTMLResponse:
+    async with tenant_session(tenant_id) as session:
+        videos = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT v.id, v.url, v.uploaded_at, j.title, c.name AS channel_name "
+                        "FROM youtube_videos v "
+                        "JOIN jobs j ON j.id = v.job_id "
+                        "JOIN channels c ON c.id = v.channel_id "
+                        "WHERE v.uploaded_at IS NOT NULL "
+                        "ORDER BY v.uploaded_at DESC"
+                    )
+                )
+            )
+            .mappings()
+            .all()
+        )
+
+        rows = []
+        max_views = 0
+        for v in videos:
+            snapshots = (
+                (
+                    await session.execute(
+                        text(
+                            "SELECT metrics FROM analytics_snapshots "
+                            "WHERE youtube_video_id = :id"
+                        ),
+                        {"id": v["id"]},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            by_day = {
+                s["metrics"]["day"]: s["metrics"] for s in snapshots if s["metrics"].get("day")
+            }
+            latest = by_day.get(30) or by_day.get(7) or by_day.get(1)
+            if latest:
+                max_views = max(max_views, latest["views"])
+            rows.append({**v, "by_day": by_day, "latest": latest})
+
+    return templates.TemplateResponse(
+        request, "analytics.html", {"rows": rows, "max_views": max_views or 1}
+    )
 
 
 @router.get("/approvals", response_class=HTMLResponse)

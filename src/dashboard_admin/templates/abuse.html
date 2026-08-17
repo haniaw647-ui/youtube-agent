@@ -1,0 +1,18 @@
+{% extends "base_admin.html" %}
+{% block title %}Abuse signals{% endblock %}
+{% block content %}
+<h2>Abuse / content-policy signals</h2>
+<p>Jobs where <code>script_qa</code> raised a content flag (ARCHITECTURE.md §14) — a baseline signal, not a full moderation system.</p>
+{% if not flagged %}<p>No content-policy flags raised across any tenant.</p>{% endif %}
+<table>
+  <tr><th>Job</th><th>Tenant</th><th>Channel</th><th>Flags</th></tr>
+  {% for f in flagged %}
+  <tr>
+    <td>{{ f.job_id }}</td>
+    <td>{{ f.tenant_name }}</td>
+    <td>{{ f.channel_name }}</td>
+    <td class="warn">{{ f.flags | join(', ') }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Analytics{% endblock %}
+{% block content %}
+<h2>Analytics</h2>
+<p>1/7/30-day view snapshots for every uploaded video. Snapshots are pulled a few times a day — a freshly uploaded video won't show numbers until it's at least a day old.</p>
+
+{% if not rows %}
+  <p>No uploaded videos yet — analytics appear here once <code>youtube_upload</code> has run for a job.</p>
+{% endif %}
+
+{% for r in rows %}
+<div class="card">
+  <h3>{{ r.title or 'Untitled' }}</h3>
+  <p>{{ r.channel_name }} &nbsp;·&nbsp; uploaded {{ r.uploaded_at.strftime('%Y-%m-%d') }} &nbsp;·&nbsp; <a href="{{ r.url }}" target="_blank" rel="noopener">watch ↗</a></p>
+
+  {% if r.latest %}
+  <div style="background: var(--accent-light); border-radius: 4px; height: 10px; margin: 0.5rem 0 0.75rem;">
+    <div style="background: var(--accent); height: 100%; border-radius: 4px; width: {{ (r.latest.views / max_views * 100) | round(1) }}%;"></div>
+  </div>
+  {% endif %}
+
+  <table>
+    <tr><th>Day</th><th>Views</th><th>Likes</th><th>Comments</th></tr>
+    {% for day in [1, 7, 30] %}
+    <tr>
+      <td>+{{ day }}</td>
+      {% if day in r.by_day %}
+        <td>{{ r.by_day[day].views }}</td>
+        <td>{{ r.by_day[day].likes }}</td>
+        <td>{{ r.by_day[day].comments }}</td>
+      {% else %}
+        <td colspan="3">— not reached yet —</td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endfor %}
+{% endblock %}
