@@ -52,8 +52,8 @@ async def channels_list(
             (
                 await session.execute(
                     text(
-                        "SELECT id, name, niche, youtube_channel_id FROM channels "
-                        "ORDER BY created_at"
+                        "SELECT id, name, niche, youtube_channel_id, whatsapp_recipient_number "
+                        "FROM channels ORDER BY created_at"
                     )
                 )
             )
@@ -63,6 +63,20 @@ async def channels_list(
     return templates.TemplateResponse(
         request, "channels.html", {"channels": channels, "error": error, "connected": connected}
     )
+
+
+@router.post("/channels/{channel_id}/whatsapp")
+async def set_whatsapp_number(
+    channel_id: str,
+    whatsapp_recipient_number: str = Form(...),
+    tenant_id=Depends(require_tenant),
+) -> RedirectResponse:
+    async with tenant_session(tenant_id) as session:
+        await session.execute(
+            text("UPDATE channels SET whatsapp_recipient_number = :number WHERE id = :id"),
+            {"number": whatsapp_recipient_number or None, "id": channel_id},
+        )
+    return RedirectResponse("/dashboard/channels", status_code=303)
 
 
 @router.get("/approvals", response_class=HTMLResponse)

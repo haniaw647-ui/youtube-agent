@@ -2,7 +2,7 @@ import json
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
 
@@ -18,6 +18,11 @@ router = APIRouter(prefix="/channels", tags=["channels"])
 # when the checklist fails or a license is unresolved.
 DEFAULT_APPROVAL_GATES = {"youtube_upload": True}
 
+CHANNEL_FIELDS = (
+    "id, name, niche, audience, language, video_length_target_seconds, style, "
+    "posting_frequency, approval_gates, whatsapp_recipient_number"
+)
+
 
 class ChannelCreate(BaseModel):
     name: str
@@ -28,6 +33,11 @@ class ChannelCreate(BaseModel):
     style: str | None = None
     posting_frequency: str | None = None
     approval_gates: dict[str, bool] | None = None
+    whatsapp_recipient_number: str | None = None
+
+
+class ChannelUpdate(BaseModel):
+    whatsapp_recipient_number: str | None = None
 
 
 class ChannelOut(BaseModel):
@@ -40,6 +50,7 @@ class ChannelOut(BaseModel):
     style: str | None
     posting_frequency: str | None
     approval_gates: dict[str, Any]
+    whatsapp_recipient_number: str | None
 
 
 @router.post("", response_model=ChannelOut)
@@ -57,12 +68,12 @@ async def create_channel(
                     text(
                         "INSERT INTO channels "
                         "(tenant_id, name, niche, audience, language, "
-                        " video_length_target_seconds, style, posting_frequency, approval_gates) "
+                        " video_length_target_seconds, style, posting_frequency, approval_gates, "
+                        " whatsapp_recipient_number) "
                         "VALUES (:tenant_id, :name, :niche, :audience, :language, "
                         " :video_length_target_seconds, :style, :posting_frequency, "
-                        " :approval_gates) "
-                        "RETURNING id, name, niche, audience, language, "
-                        " video_length_target_seconds, style, posting_frequency, approval_gates"
+                        " :approval_gates, :whatsapp_recipient_number) "
+                        f"RETURNING {CHANNEL_FIELDS}"
                     ),
                     {
                         "tenant_id": tenant_id,
@@ -85,14 +96,36 @@ async def list_channels(
         rows = (
             (
                 await session.execute(
-                    text(
-                        "SELECT id, name, niche, audience, language, "
-                        "video_length_target_seconds, style, posting_frequency, approval_gates "
-                        "FROM channels ORDER BY created_at"
-                    )
+                    text(f"SELECT {CHANNEL_FIELDS} FROM channels ORDER BY created_at")
                 )
             )
             .mappings()
             .all()
         )
     return [dict(r) for r in rows]
+
+
+@router.patch("/{channel_id}", response_model=ChannelOut)
+async def update_channel(
+    channel_id: uuid.UUID,
+    body: ChannelUpdate,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+) -> dict[str, Any]:
+    async with tenant_session(tenant_id) as session:
+        row = (
+            (
+                await session.execute(
+                    text(
+                        "UPDATE channels "
+                        "SET whatsapp_recipient_number = :whatsapp_recipient_number "
+                        f"WHERE id = :id RETURNING {CHANNEL_FIELDS}"
+                    ),
+                    {"id": channel_id, "whatsapp_recipient_number": body.whatsapp_recipient_number},
+                )
+            )
+            .mappings()
+            .first()
+        )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    return dict(row)

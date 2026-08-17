@@ -84,4 +84,7 @@ class NotificationSent(Base, TenantScopedMixin):
     notify_channel: Mapped[str] = mapped_column(nullable=False, server_default="whatsapp")
     message_type: Mapped[str] = mapped_column(nullable=False)
     status: Mapped[str] = mapped_column(nullable=False)
+    # WhatsApp Cloud API's message id — correlates delivery-status webhook
+    # callbacks (sent/delivered/read/failed) back to this row.
+    provider_message_id: Mapped[str | None] = mapped_column(nullable=True, index=True)
     sent_at: Mapped[datetime] = mapped_column(server_default=text("now()"))

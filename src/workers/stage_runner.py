@@ -21,6 +21,7 @@ from src.workers.stages import (
     video_assembly,
     visual_generation,
     voice_over,
+    whatsapp_notification,
     youtube_upload,
 )
 
@@ -38,9 +39,8 @@ HEAVY_STAGES = {
 PARALLEL_STAGES = {"voice_over", "visual_generation"}
 STAGE_AFTER_PARALLEL = "video_assembly"
 
-# Real implementations, added stage-by-stage as each phase replaces the stub.
-# Anything not listed here still gets the stub behavior (fake artifact, marks
-# done) — that's whatsapp_notification, due in Phase 8.
+# Real implementations for every pipeline stage — the last stub
+# (whatsapp_notification) was replaced in Phase 8.
 StageFn = Callable[[str, str], Awaitable[dict]]
 STAGE_IMPLEMENTATIONS: dict[str, StageFn] = {
     "topic_generation": topic_generation.run,
@@ -57,6 +57,7 @@ STAGE_IMPLEMENTATIONS: dict[str, StageFn] = {
     "metadata_generation": metadata_generation.run,
     "final_qa": final_qa.run,
     "youtube_upload": youtube_upload.run,
+    "whatsapp_notification": whatsapp_notification.run,
 }
 
 
