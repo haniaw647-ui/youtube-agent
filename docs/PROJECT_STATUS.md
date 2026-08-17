@@ -4,7 +4,18 @@ Living document — update this in the same commit/session as any implementation
 
 ## Where things stand
 
-**Phase 3 (voice-over and visual generation/collection) complete.** Phases 0 through 3 are all done, deployed, and passing their test suites. Two things now waiting on you before a real live demo can run — a connected Anthropic/Tavily/ElevenLabs/Pexels tenant, and Cloudflare R2 credentials — see "Immediate next steps."
+**Phase 4 (video assembly, subtitles, background music) complete.** Phases 0 through 4 are all done, deployed, and passing their test suites. This phase is unusual: it's the first one genuinely verified end-to-end with real, unmocked execution (no external credentials needed — video assembly is pure local compute). Two things still waiting on you before a live demo of the *whole* pipeline can run — a connected Anthropic/Tavily/ElevenLabs/Pexels tenant, and Cloudflare R2 credentials — see "Immediate next steps."
+
+### Phase 4 — video assembly, subtitles, background music
+- **ffmpeg orchestration helper** (`src/workers/ffmpeg_utils.py`, subprocess-based): Ken-Burns-style image sequencing scaled to real audio duration, subtitle burn-in, background music mixing/ducking
+- **Real `video_assembly` stage**: downloads the voice + visual assets from R2, scales each scene's word-count-estimated duration to match the actual (ffprobe-measured) narration length so the video's timing is grounded in reality rather than a pure estimate, assembles a timed video, uploads as a `video_draft` asset
+- **Real `subtitle_burn_in` stage**: SRT cue timing built from `video_assembly`'s scaled per-scene durations (not estimates alone), burns captions into the video
+- **Real `background_music` stage**: mixes a track under the narration, uploads the `video_final` asset with `license_type` populated
+- **Resolved the open `WHISPER_MODE` decision by realizing Whisper isn't needed at all**: we already know the exact narration text (we synthesized it from it) — there's nothing to transcribe, only timing to estimate, which word-count-proportional scaling against real audio duration handles without any API call or added dependency. `ENVIRONMENT.md` updated to explain this instead of listing a var that doesn't exist.
+- **No real licensed music library exists yet** — `background_music` generates a synthesized placeholder tone, stamped `license_type='platform-placeholder-not-for-production'` so it can never be mistaken for cleared music. Sourcing real licensed tracks (API_REQUIREMENTS.md §2) is a content decision for the user, not something to fabricate.
+- **Real, unmocked integration test**: synthesizes test images/audio with ffmpeg itself (no external credentials needed) and runs the actual assembly → captions → music pipeline end to end, verifying valid media comes out — stronger verification than Phase 2/3 could get, since those needed real provider keys this environment doesn't have
+- Installed ffmpeg locally (via winget) specifically to make this real local testing possible; added it to CI explicitly too, rather than assuming the runner has it
+- **Deployed**: all four services redeployed and healthy; `worker-heavy` (where ffmpeg actually runs) confirmed connected and ready
 
 ### Phase 3 — voice-over and visual generation/collection
 - **Cloudflare R2 storage abstraction** (`providers/storage/r2.py`, S3-compatible via `aioboto3`) — platform-level credentials (not tenant BYO, since object storage is infra the platform provides regardless of which AI providers a tenant picks)
@@ -77,20 +88,20 @@ Historical: all six planning docs below reflect the current design (a multi-tena
 
 ## Decisions still open (deliberately deferred)
 
-- **Video assembly ceiling**: ffmpeg templates vs. Remotion — revisit only if templates prove visually insufficient (Phase 4).
 - **Scheduling mechanism**: Celery Beat vs. Railway native scheduling — decide Phase 10 (not needed until scheduled/unattended posting).
-- **Whisper mode**: platform-absorbed cost vs. tenant's own key vs. self-hosted — decide Phase 4 once volume is known.
+- **Real licensed music library**: still just a placeholder tone — needs a user decision (curated CC0 set vs. a paid API like Epidemic Sound, API_REQUIREMENTS.md §2) before anything from this pipeline is publish-ready.
 - **Monetization** (Phase 11, explicitly not scheduled): whether/how the platform charges tenants for access itself. BYO keys means this isn't blocking — it's a pricing decision to make once there's a working product.
 
 ## Immediate next steps
 
-1. **You, to unblock any live demo (Phase 2 or 3)**: get a tenant signed up (email confirmed) with Anthropic + Tavily + ElevenLabs (or OpenAI) + Pexels keys connected via the API key vault, so a real topic → research → script → QA → voice → visuals run can actually execute end-to-end.
-2. **You, to unblock Phase 3 specifically**: create a Cloudflare account (if you don't have one), an R2 bucket, and an R2 API token (Account ID, Access Key ID, Secret Access Key), and give me the bucket name + credentials — I have no Cloudflare connector in this environment, unlike Supabase/Railway, so this one genuinely needs your hands. I'll wire it into Railway the same way I did `DATABASE_URL`.
+1. **You, to unblock any live demo (Phases 2-4)**: get a tenant signed up (email confirmed) with Anthropic + Tavily + ElevenLabs (or OpenAI) + Pexels keys connected via the API key vault, so a real topic → research → script → QA → voice → visuals → assembled video run can actually execute end-to-end.
+2. **You, to unblock real storage (Phases 3-4)**: create a Cloudflare account (if you don't have one), an R2 bucket, and an R2 API token (Account ID, Access Key ID, Secret Access Key), and give me the bucket name + credentials — I have no Cloudflare connector in this environment, unlike Supabase/Railway, so this one genuinely needs your hands. I'll wire it into Railway the same way I did `DATABASE_URL`.
 3. **You, still not started**: begin the Google Cloud OAuth consent screen → external/production verification process. This remains the **single longest external lead-time item in the whole project** and directly blocks onboarding any real (non-test) tenant — see ARCHITECTURE.md §9 and IMPLEMENTATION_PLAN.md Phase 0/6. A placeholder privacy policy page is enough to start the process.
 4. **You**: begin Meta Business Manager + WhatsApp Business Cloud API setup (API_REQUIREMENTS.md §1).
 5. **You**: add `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SECRET_KEY`, `ENCRYPTION_KEY` as GitHub Actions repo secrets (same values as your local `.env`) so CI can actually run the isolation test on every push.
-6. **Legal, before real tenants onboard**: Terms of Service, Privacy Policy, Acceptable Use Policy (ARCHITECTURE.md §13).
-7. **Me** (once you confirm): start Phase 4 — video assembly, subtitles, background music.
+6. **You, eventually**: decide on a real licensed music source (curated CC0 set vs. a paid API) — not urgent, but nothing from `background_music` is publish-safe until this is resolved.
+7. **Legal, before real tenants onboard**: Terms of Service, Privacy Policy, Acceptable Use Policy (ARCHITECTURE.md §13).
+8. **Me** (once you confirm): start Phase 5 — thumbnail generation and metadata (title/description/tags).
 
 ## Known risks to keep in view
 
@@ -108,4 +119,5 @@ Historical: all six planning docs below reflect the current design (a multi-tena
 - **2026-08-17**: Real `DATABASE_URL` wired into Railway and local `.env`, connection verified end-to-end (local + deployed).
 - **2026-08-17**: Phase 1 complete — 13-table multi-tenant schema with RLS applied to production; `tenant_session`/`service_session` DB layer proven with a real cross-tenant smoke test before building on it; Supabase Auth signup/login wired; channel CRUD + BYO API key vault; 15-stage stub Celery pipeline with parallel join and approval-gate pause/resume; automated isolation test passing against production; `api`/`worker-light`/`worker-heavy` all deployed and healthy on Railway (after fixing an OOM crash-loop in `worker-light` from Celery's default CPU-count concurrency).
 - **2026-08-17**: Phase 2 complete — Anthropic + Tavily provider adapters; real topic_generation/topic_scoring/research/script_writing/script_qa stages replacing the Phase 1 stubs; script_qa's capped revision loop with human escalation; fixed a job_stages row-targeting bug the revision loop exposed; minimal server-rendered tenant dashboard with a working approval queue; unit tests for scoring/parsing/adapters (mocked, no API keys needed); redeployed and verified live.
-- **2026-08-17**: Phase 3 complete — R2 storage abstraction; ElevenLabs/OpenAI TTS voice adapters and Pexels visual adapter; real voice_over and visual_generation stages populating `assets.license_type` per image; script_writing now surfaces its parsed segments for downstream stages to consume; unit tests for all four new adapters; redeployed and verified live. Next: Phase 4 (video assembly, subtitles, music) — but no live demo of Phase 2 or 3 has run yet, waiting on a connected tenant and R2 credentials from the user.
+- **2026-08-17**: Phase 3 complete — R2 storage abstraction; ElevenLabs/OpenAI TTS voice adapters and Pexels visual adapter; real voice_over and visual_generation stages populating `assets.license_type` per image; script_writing now surfaces its parsed segments for downstream stages to consume; unit tests for all four new adapters; redeployed and verified live.
+- **2026-08-17**: Phase 4 complete — ffmpeg orchestration for video assembly (Ken-Burns pacing scaled to real audio duration), subtitle burn-in, and background music mixing; resolved the open Whisper-mode decision by realizing it isn't needed (we already know the narration text, only timing needed estimating); shipped a clearly-flagged placeholder music tone pending a real licensed source; installed ffmpeg locally to run a real unmocked integration test — the first phase verified with genuine end-to-end execution rather than mocks, since video assembly needs no external credentials; redeployed and verified live. Next: Phase 5 (thumbnail generation, metadata) — still no live demo of Phases 2-4 together, waiting on a connected tenant and R2 credentials from the user.
