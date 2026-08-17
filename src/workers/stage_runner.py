@@ -7,7 +7,15 @@ from sqlalchemy import text
 
 from src.models.pipeline import PIPELINE_STAGES
 from src.orchestrator.db import service_session
-from src.workers.stages import research, script_qa, script_writing, topic_generation, topic_scoring
+from src.workers.stages import (
+    research,
+    script_qa,
+    script_writing,
+    topic_generation,
+    topic_scoring,
+    visual_generation,
+    voice_over,
+)
 
 # Matches the async/sync split in ARCHITECTURE.md §8: text/API-bound stages are
 # 'light', render/upload-bound stages are 'heavy' and get their own worker pool.
@@ -25,7 +33,7 @@ STAGE_AFTER_PARALLEL = "video_assembly"
 
 # Real implementations, added stage-by-stage as each phase replaces the stub.
 # Anything not listed here still gets the stub behavior (fake artifact, marks
-# done) — that's stages 6 onward, due in Phase 3+.
+# done) — that's stages 8 onward (video assembly through upload), due in Phase 4+.
 StageFn = Callable[[str, str], Awaitable[dict]]
 STAGE_IMPLEMENTATIONS: dict[str, StageFn] = {
     "topic_generation": topic_generation.run,
@@ -33,6 +41,8 @@ STAGE_IMPLEMENTATIONS: dict[str, StageFn] = {
     "research": research.run,
     "script_writing": script_writing.run,
     "script_qa": script_qa.run,
+    "voice_over": voice_over.run,
+    "visual_generation": visual_generation.run,
 }
 
 

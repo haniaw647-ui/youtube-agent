@@ -137,4 +137,11 @@ async def run(job_id: str, tenant_id: str) -> dict:
         )
         await session.commit()
 
-    return {"version": version, "word_count": word_count, "revised": revision_feedback is not None}
+    return {
+        "version": version,
+        "word_count": word_count,
+        "revised": revision_feedback is not None,
+        # voice_over/visual_generation (Phase 3) read this back from
+        # job_stages.output_ref rather than re-parsing scripts.content.
+        "segments": segments,
+    }
