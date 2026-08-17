@@ -4,7 +4,7 @@ Living document — update this in the same commit/session as any implementation
 
 ## Where things stand
 
-**Phase 0 (scaffolding) in progress.** Design docs are complete; local scaffolding and cloud infra provisioning are done. Blocked on one thing: a GitHub repo to deploy the `api` service to Railway (see "Immediate next steps").
+**Phase 0 (scaffolding) complete.** Design docs, local scaffolding, and cloud infra are all done and verified end-to-end, including a live deployment.
 
 Done so far:
 - Repo layout scaffolded (`src/orchestrator`, `src/workers`, `src/providers/*`, `src/models`, `src/dashboard_tenant`, `src/dashboard_ops`, `tests/`)
@@ -13,11 +13,13 @@ Done so far:
 - Docker Compose (api + worker-light + worker-heavy + redis) for local dev
 - Alembic initialized (async, SQLAlchemy 2.0 `Base`), empty initial migration generated and verified
 - Ruff + mypy both clean, pytest passing
-- CI workflow (`.github/workflows/ci.yml`): lint + type check + test on push — will activate once pushed to GitHub
+- CI workflow (`.github/workflows/ci.yml`): lint + type check + test on push
+- **GitHub repo**: [haniaw647-ui/youtube-agent](https://github.com/haniaw647-ui/youtube-agent), code pushed to `main`
 - **Supabase project created**: `youtube-automation-platform` (ref `yfmgffojwqhodmvvwqsy`, region `us-east-1`) — free tier
-- **Railway project created**: `youtube-automation-platform`, with a `redis` service (image `redis:7-alpine`) already running
+- **Railway project created**: `youtube-automation-platform`, with `redis` and `api` services running
+- **Live deployment verified**: `https://api-production-f6f23.up.railway.app/health` returns `200 {"status": "ok"}`
 
-Not yet done: `api`/`worker-light`/`worker-heavy` services on Railway (waiting on a GitHub repo — Railway's deploy tool requires one), `.env` filled with real Supabase DB password + generated secrets (only `.env.example` exists, matching what's in [ENVIRONMENT.md](ENVIRONMENT.md)).
+Not yet done: `worker-light`/`worker-heavy` Railway services (Phase 1, once there's real task logic to run), `.env`/Railway vars filled with the real Supabase DB password + service role key (only placeholders exist — I don't have a way to retrieve these, need them from you).
 
 Historical: all six planning docs below reflect the current design (a multi-tenant product for external YouTubers, not a single-operator personal tool).
 
@@ -68,3 +70,4 @@ Historical: all six planning docs below reflect the current design (a multi-tena
 - **2026-08-17**: Initial single-operator architecture and supporting docs written.
 - **2026-08-17**: Pivoted to multi-tenant product design (other YouTubers as customers), BYO AI provider keys, Supabase Auth+RLS for tenant isolation. All six docs rewritten to reflect this. No code yet.
 - **2026-08-17**: Phase 0 started — repo scaffolding, FastAPI/Celery/Alembic skeleton, Docker Compose, CI workflow all in place and verified locally (tests/lint/type-check passing). Supabase project and Railway project (+ Redis service) provisioned. Blocked on a GitHub repo to deploy the `api` service.
+- **2026-08-17**: Phase 0 complete — pushed to [haniaw647-ui/youtube-agent](https://github.com/haniaw647-ui/youtube-agent), deployed `api` to Railway, verified `/health` live in production. Next: Phase 1 (tenant auth + RLS + orchestrator core).
