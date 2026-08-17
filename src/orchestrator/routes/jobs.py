@@ -9,7 +9,7 @@ from sqlalchemy import text
 from src.models.pipeline import PIPELINE_STAGES
 from src.orchestrator.db import tenant_session
 from src.orchestrator.supabase_auth import get_current_tenant_id
-from src.workers.stage_runner import enqueue_stage
+from src.workers.stage_runner import enqueue_stage, resume_after_approval
 
 router = APIRouter(tags=["jobs"])
 
@@ -190,10 +190,16 @@ async def approve_stage(
             {"job_id": job_id},
         )
         await session.execute(
-            text("DELETE FROM job_stages WHERE job_id = :job_id AND stage = :stage"),
-            {"job_id": job_id, "stage": stage},
+            text("DELETE FROM job_stages WHERE id = :id"),
+            {"id": pending["id"]},
         )
 
+        if body.decision != "approved":
+            await session.execute(
+                text("UPDATE jobs SET overall_status = 'failed' WHERE id = :job_id"),
+                {"job_id": job_id},
+            )
+
     if body.decision == "approved":
-        enqueue_stage(job_id, str(tenant_id), stage)
+        await resume_after_approval(job_id, str(tenant_id), stage)
     return {"status": "resumed" if body.decision == "approved" else "rejected"}

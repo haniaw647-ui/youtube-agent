@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Approvals{% endblock %}
+{% block content %}
+<h2>Pending approvals</h2>
+{% if not items %}
+  <p>Nothing waiting on you right now.</p>
+{% endif %}
+{% for item in items %}
+<div class="card">
+  <h3>{{ item.channel_name }} — {{ item.job_id }} — stage: {{ item.stage }}</h3>
+
+  {% if item.detail.candidates %}
+    <table>
+      <tr><th>Title</th><th>Hook</th><th>Score</th></tr>
+      {% for c in item.detail.candidates %}
+      <tr><td>{{ c.title }}</td><td>{{ c.hook }}</td><td>{{ c.score }}</td></tr>
+      {% endfor %}
+    </table>
+  {% endif %}
+
+  {% if item.detail.script %}
+    <p><strong>Script v{{ item.detail.script.version }}</strong> ({{ item.detail.script.word_count }} words)</p>
+    {% if item.detail.qa_feedback %}
+      <p><em>QA feedback: {{ item.detail.qa_feedback }}</em></p>
+    {% endif %}
+    <div class="script-content">{{ item.detail.script.content }}</div>
+  {% endif %}
+
+  <form method="post" action="/dashboard/approvals/{{ item.job_id }}/{{ item.stage }}" style="margin-top: 1rem;">
+    <button type="submit" name="decision" value="approved">Approve</button>
+    <button type="submit" name="decision" value="rejected">Reject</button>
+  </form>
+</div>
+{% endfor %}
+{% endblock %}
