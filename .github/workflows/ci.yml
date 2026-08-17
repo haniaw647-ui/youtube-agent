@@ -25,4 +25,10 @@ jobs:
         run: mypy src
 
       - name: Test (pytest)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
         run: pytest

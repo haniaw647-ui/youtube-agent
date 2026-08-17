@@ -5,7 +5,7 @@ from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
-from src.models.base import Base
+from src.models import Base
 from src.orchestrator.config import get_settings
 
 config = context.config
@@ -16,7 +16,9 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# configparser treats % as interpolation syntax — escape it since a URL-encoded
+# password (e.g. %40 for @) would otherwise raise on set_main_option.
+config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
 
 
 def run_migrations_offline() -> None:
