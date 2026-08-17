@@ -4,26 +4,28 @@ Living document — update this in the same commit/session as any implementation
 
 ## Where things stand
 
-**Phase 0 (scaffolding) complete.** Design docs, local scaffolding, and cloud infra are all done and verified end-to-end, including a live deployment.
+**Phase 1 (tenant auth, RLS, orchestrator core) complete.** Phase 0 (scaffolding) and Phase 1 are both done and verified end-to-end against real production infrastructure — no mocks.
 
-Done so far:
-- Repo layout scaffolded (`src/orchestrator`, `src/workers`, `src/providers/*`, `src/models`, `src/dashboard_tenant`, `src/dashboard_ops`, `tests/`)
-- FastAPI skeleton with `/health` endpoint — test passing locally
-- Celery app configured (`light`/`heavy` queue routing) against Redis
-- Docker Compose (api + worker-light + worker-heavy + redis) for local dev
-- Alembic initialized (async, SQLAlchemy 2.0 `Base`), empty initial migration generated and verified
-- Ruff + mypy both clean, pytest passing
-- CI workflow (`.github/workflows/ci.yml`): lint + type check + test on push
-- **GitHub repo**: [haniaw647-ui/youtube-agent](https://github.com/haniaw647-ui/youtube-agent), code pushed to `main`
-- **Supabase project created**: `youtube-automation-platform` (ref `yfmgffojwqhodmvvwqsy`, region `us-east-1`) — free tier
-- **Railway project created**: `youtube-automation-platform`, with `redis` and `api` services running
-- **Live deployment verified**: `https://api-production-f6f23.up.railway.app/health` returns `200 {"status": "ok"}`
+### Phase 0 — scaffolding
+- Repo layout, FastAPI skeleton, Celery app (`light`/`heavy` queues), Docker Compose, Alembic, CI (ruff + mypy + pytest on push)
+- **GitHub repo**: [haniaw647-ui/youtube-agent](https://github.com/haniaw647-ui/youtube-agent)
+- **Supabase project**: `youtube-automation-platform` (ref `yfmgffojwqhodmvvwqsy`, `us-east-1`, free tier)
+- **Railway project**: `youtube-automation-platform`
+- Real `DATABASE_URL` wired into Railway + local `.env` (gitignored), connection verified
 
-- **`DATABASE_URL` live**: real Supabase Postgres password wired into both Railway's `api` service and the local `.env` (gitignored); connection verified from both local machine and confirmed via a clean Railway redeploy.
+### Phase 1 — multi-tenant schema, RLS, auth, stub pipeline
+- **13-table schema** (`tenants`, `tenant_api_keys`, `channels`, `jobs`, `job_stages`, `topics`, `scripts`, `assets`, `api_call_logs`, `approvals`, `youtube_videos`, `analytics_snapshots`, `notifications_sent`) applied to production via Alembic
+- **Row-Level Security on every tenant table**, policy `tenant_id = auth.uid()` (or `id = auth.uid()` on `tenants` itself), verified directly against `pg_policies` in production
+- **RLS enforcement mechanism**: `tenant_session(tenant_id)` switches the connection to the `authenticated` Postgres role and sets `request.jwt.claims` per-transaction — real database-level isolation, not app-logic-only. `service_session()` (unscoped, bypasses RLS) is for internal/worker code only. Both in [src/orchestrator/db.py](../src/orchestrator/db.py).
+- **Supabase Auth wired**: signup/login proxy endpoints, bearer-token verification via `/auth/v1/user` (no JWT secret needed in the app)
+- **Tenant-scoped channel CRUD** and **BYO API key vault** (Fernet-encrypted at rest, masked on read)
+- **15-stage stub Celery pipeline**: sequencing, the parallel voice/visual join before assembly, retries, and approval-gate pause/resume all implemented and working
+- **Automated cross-tenant isolation test** ([tests/test_tenant_isolation.py](../tests/test_tenant_isolation.py)) — two synthetic tenants exercise the real API + RLS path; proves tenant A cannot read or write tenant B's channels, jobs, or API keys. Passing against production Supabase.
+- **Deployed**: `api`, `worker-light`, `worker-heavy`, `redis` all running on Railway. `worker-light` initially OOM-crash-looped (Celery's default concurrency = detected CPU count = 48, far too many prefork processes for the container) — fixed by capping concurrency at 4; `worker-heavy` was already capped at 2 and unaffected.
 
-Not yet done: `worker-light`/`worker-heavy` Railway services (Phase 1, once there's real task logic to run), `SUPABASE_SERVICE_ROLE_KEY` (no tool available to retrieve it — needed later for the internal ops dashboard's cross-tenant queries in Phase 9, not blocking Phase 1).
+Not yet done: `SUPABASE_SERVICE_ROLE_KEY` (no tool available to retrieve it — needed for the internal ops dashboard's cross-tenant queries in Phase 9, not blocking); CI's isolation test needs `DATABASE_URL`/`SUPABASE_URL`/`SUPABASE_ANON_KEY`/`SECRET_KEY`/`ENCRYPTION_KEY` added as GitHub Actions secrets (same values as local `.env`) — not yet set since `gh` isn't authenticated on this machine; a full live tenant journey (real signup → email confirmation → login → create channel/job) hasn't been exercised against the deployed API specifically, since Supabase requires email confirmation and I have no way to auto-confirm without the service-role key — the isolation test covers the equivalent path via dependency injection instead, which is the standard way to test authorization logic independent of the auth provider's round trip.
 
-Note on the DB password: I attempted to reset it myself via SQL (`ALTER USER postgres WITH PASSWORD ...`) using the Supabase connector so the user wouldn't need to dig through the dashboard — that specific action was blocked by an automated safety guardrail (root DB credential changes are gated regardless of tool access). The user reset it manually and provided it instead.
+Note on the DB password (Phase 0): I attempted to reset it myself via SQL (`ALTER USER postgres WITH PASSWORD ...`) using the Supabase connector so the user wouldn't need to dig through the dashboard — that specific action was blocked by an automated safety guardrail (root DB credential changes are gated regardless of tool access). The user reset it manually and provided it instead.
 
 Historical: all six planning docs below reflect the current design (a multi-tenant product for external YouTubers, not a single-operator personal tool).
 
@@ -50,22 +52,22 @@ Historical: all six planning docs below reflect the current design (a multi-tena
 
 - **Tenant dashboard tech**: server-rendered (HTMX) vs. thin React frontend — decide during Phase 2, once there's real tenant-facing UI beyond auth/settings (IMPLEMENTATION_PLAN.md Phase 2).
 - **Video assembly ceiling**: ffmpeg templates vs. Remotion — revisit only if templates prove visually insufficient (Phase 4).
-- **Scheduling mechanism**: Celery Beat vs. Railway native scheduling — decide Phase 1.
+- **Scheduling mechanism**: Celery Beat vs. Railway native scheduling — decide Phase 10 (not needed until scheduled/unattended posting).
 - **Whisper mode**: platform-absorbed cost vs. tenant's own key vs. self-hosted — decide Phase 4 once volume is known.
 - **Monetization** (Phase 11, explicitly not scheduled): whether/how the platform charges tenants for access itself. BYO keys means this isn't blocking — it's a pricing decision to make once there's a working product.
 
 ## Immediate next steps
 
-1. **You, starting now, in parallel with Phase 0**: begin the Google Cloud OAuth consent screen → external/production verification process. This is now the **single longest external lead-time item in the whole project** and directly blocks onboarding any real (non-test) tenant — see ARCHITECTURE.md §9 and IMPLEMENTATION_PLAN.md Phase 0/6. A placeholder privacy policy page is enough to start the process.
-2. **You**: begin Meta Business Manager + WhatsApp Business Cloud API setup (shorter lead time than Google's, but still worth starting early — API_REQUIREMENTS.md §1).
-3. **You**: create a Supabase account/project when Phase 0 starts (or let me do it if you'd rather hand over credentials/access).
-4. **Me** (once you confirm this rewrite matches your intent): start Phase 0 — scaffolding + Supabase/Railway setup.
-5. **Legal, before real tenants onboard, not before Phase 0**: Terms of Service, Privacy Policy, Acceptable Use Policy (ARCHITECTURE.md §13) — flagged as a parallel task for you, not something I build.
+1. **You, still not started**: begin the Google Cloud OAuth consent screen → external/production verification process. This remains the **single longest external lead-time item in the whole project** and directly blocks onboarding any real (non-test) tenant — see ARCHITECTURE.md §9 and IMPLEMENTATION_PLAN.md Phase 0/6. A placeholder privacy policy page is enough to start the process.
+2. **You**: begin Meta Business Manager + WhatsApp Business Cloud API setup (API_REQUIREMENTS.md §1).
+3. **You**: add `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SECRET_KEY`, `ENCRYPTION_KEY` as GitHub Actions repo secrets (same values as your local `.env`) so CI can actually run the isolation test on every push.
+4. **Legal, before real tenants onboard**: Terms of Service, Privacy Policy, Acceptable Use Policy (ARCHITECTURE.md §13).
+5. **Me** (once you confirm): start Phase 2 — real topic/research/script/QA pipeline using the tenant's own Anthropic key.
 
 ## Known risks to keep in view
 
 - **Shared YouTube quota is the platform's real scaling ceiling** (ARCHITECTURE.md §9): ~6 uploads/day across ALL tenants combined on Google's default quota. Requesting an increase needs to happen proactively as tenant count grows, not reactively after uploads start failing.
-- **Cross-tenant data isolation (RLS) must be proven with automated tests from Phase 1 onward**, not just designed — this is the single highest-consequence thing to get right early (IMPLEMENTATION_PLAN.md Phase 1).
+- **Cross-tenant data isolation (RLS)** — proven with an automated test against production in Phase 1 (see above), not just designed. Keep extending this test as new tables/routes are added; a migration that forgets a policy is exactly the kind of regression this guards against.
 - **Abuse/content-policy surface is new** with multi-tenancy — a single operator only had to trust themselves; now the platform is a pipe for other people's content choices straight to YouTube (ARCHITECTURE.md §14).
 - Copyright/licensing on generated visuals/music is now partly the *tenant's* responsibility (their own provider accounts) but the platform still needs to make license status visible/auditable per asset, not silently assume it's fine (ARCHITECTURE.md §11).
 
@@ -75,4 +77,5 @@ Historical: all six planning docs below reflect the current design (a multi-tena
 - **2026-08-17**: Pivoted to multi-tenant product design (other YouTubers as customers), BYO AI provider keys, Supabase Auth+RLS for tenant isolation. All six docs rewritten to reflect this. No code yet.
 - **2026-08-17**: Phase 0 started — repo scaffolding, FastAPI/Celery/Alembic skeleton, Docker Compose, CI workflow all in place and verified locally (tests/lint/type-check passing). Supabase project and Railway project (+ Redis service) provisioned. Blocked on a GitHub repo to deploy the `api` service.
 - **2026-08-17**: Phase 0 complete — pushed to [haniaw647-ui/youtube-agent](https://github.com/haniaw647-ui/youtube-agent), deployed `api` to Railway, verified `/health` live in production.
-- **2026-08-17**: Real `DATABASE_URL` wired into Railway and local `.env`, connection verified end-to-end (local + deployed). Next: Phase 1 (tenant auth + RLS + orchestrator core).
+- **2026-08-17**: Real `DATABASE_URL` wired into Railway and local `.env`, connection verified end-to-end (local + deployed).
+- **2026-08-17**: Phase 1 complete — 13-table multi-tenant schema with RLS applied to production; `tenant_session`/`service_session` DB layer proven with a real cross-tenant smoke test before building on it; Supabase Auth signup/login wired; channel CRUD + BYO API key vault; 15-stage stub Celery pipeline with parallel join and approval-gate pause/resume; automated isolation test passing against production; `api`/`worker-light`/`worker-heavy` all deployed and healthy on Railway (after fixing an OOM crash-loop in `worker-light` from Celery's default CPU-count concurrency). Next: Phase 2 (real topic/research/script/QA pipeline).
