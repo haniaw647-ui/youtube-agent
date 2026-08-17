@@ -4,7 +4,24 @@ Living document — update this in the same commit/session as any implementation
 
 ## Where things stand
 
-**Phase 1 (tenant auth, RLS, orchestrator core) complete.** Phase 0 (scaffolding) and Phase 1 are both done and verified end-to-end against real production infrastructure — no mocks.
+**Phase 2 (real topic/research/script/QA pipeline) complete.** Phases 0, 1, and 2 are all done and verified end-to-end against real production infrastructure — no mocks. One thing outstanding: a real live demo run needs a tenant with a connected Anthropic (and Tavily) key, which needs your input — see "Immediate next steps."
+
+### Phase 2 — real text pipeline
+- **Provider adapters**: `providers/llm/anthropic.py` (Claude), `providers/search/tavily.py` — both behind small swappable interfaces per the provider-swappable principle
+- **`provider_keys.get_tenant_key()`**: fetches and decrypts a tenant's own BYO key for a given provider — this is what makes every stage below actually use *the tenant's* API spend, not the platform's
+- **Real stage implementations** replacing the Phase 1 stubs for the first 5 pipeline stages:
+  - `topic_generation`: LLM call producing scored candidates (`score = interest + uniqueness - difficulty`, evergreen bonus — a simplified version of the master prompt's 5-dimension formula, since those extra dimensions aren't separate DB columns), with duplicate prevention against the channel's full topic history
+  - `topic_scoring`: selects the top-scoring candidate, marks the rest rejected
+  - `research`: Tavily search on the selected topic, notes stored in `job_stages.output_ref` (R2 storage for this lands in Phase 3/4 per the plan — this is a deliberate interim choice, `output_ref` exists exactly for this purpose)
+  - `script_writing`: scene-segmented script from topic + research + channel style, revision-aware (reads the latest QA feedback and addresses it when re-invoked)
+  - `script_qa`: LLM QA check against research/style, with a capped revision loop (`MAX_QA_ATTEMPTS = 3`) that escalates to a human approval gate rather than looping forever or silently failing
+- **Fixed a latent bug from Phase 1** while building the revision loop: `job_stages` completion updates were targeted by `(job_id, stage)`, which would have updated every prior attempt's row at once once a stage could run more than once. Now targeted by the specific row's own id.
+- **Approval-gate resume logic now distinguishes two cases**: a stage gated *before* it ever ran (channel-config gate) just gets enqueued for the first time on approval; script_qa escalating *after* exhausting revisions means a human is overriding QA, which resumes at voice_over/visual_generation rather than re-running QA.
+- **Minimal tenant dashboard** (`/dashboard`): cookie-based login against Supabase Auth, an approval queue showing topic candidates or script content inline, approve/reject actions. Dashboard tech decision finalized: server-rendered Jinja2/HTMX, per the ARCHITECTURE.md §3 default.
+- **Unit tests** for scoring logic, JSON-response parsing (LLMs wrap "JSON only" responses in code fences anyway), and both provider adapters — all mocked, no API keys needed, safe for CI.
+- **Deployed**: all four services redeployed and healthy on Railway; `/health` and `/dashboard/login` both verified live.
+
+### Phase 1 — tenant auth, RLS, orchestrator core
 
 ### Phase 0 — scaffolding
 - Repo layout, FastAPI skeleton, Celery app (`light`/`heavy` queues), Docker Compose, Alembic, CI (ruff + mypy + pytest on push)
@@ -47,10 +64,10 @@ Historical: all six planning docs below reflect the current design (a multi-tena
 | 2026-08-17 | **Product scope (pivot)** | **Multi-tenant** — other YouTubers use this as a product, not a personal tool | ARCHITECTURE.md §1 |
 | 2026-08-17 | AI provider cost model | **Bring-your-own (BYO) API keys** per tenant | ARCHITECTURE.md §7, API_REQUIREMENTS.md §2 |
 | 2026-08-17 | Tenant auth | Managed auth provider — **Supabase Auth** picked as the default (with RLS for isolation) | ARCHITECTURE.md §2, §3 |
+| 2026-08-17 | Tenant dashboard tech | Server-rendered **Jinja2/HTMX** (not a React SPA) — the approval-queue use case didn't need one | ARCHITECTURE.md §3, Phase 2 dashboard |
 
 ## Decisions still open (deliberately deferred)
 
-- **Tenant dashboard tech**: server-rendered (HTMX) vs. thin React frontend — decide during Phase 2, once there's real tenant-facing UI beyond auth/settings (IMPLEMENTATION_PLAN.md Phase 2).
 - **Video assembly ceiling**: ffmpeg templates vs. Remotion — revisit only if templates prove visually insufficient (Phase 4).
 - **Scheduling mechanism**: Celery Beat vs. Railway native scheduling — decide Phase 10 (not needed until scheduled/unattended posting).
 - **Whisper mode**: platform-absorbed cost vs. tenant's own key vs. self-hosted — decide Phase 4 once volume is known.
@@ -58,11 +75,12 @@ Historical: all six planning docs below reflect the current design (a multi-tena
 
 ## Immediate next steps
 
-1. **You, still not started**: begin the Google Cloud OAuth consent screen → external/production verification process. This remains the **single longest external lead-time item in the whole project** and directly blocks onboarding any real (non-test) tenant — see ARCHITECTURE.md §9 and IMPLEMENTATION_PLAN.md Phase 0/6. A placeholder privacy policy page is enough to start the process.
-2. **You**: begin Meta Business Manager + WhatsApp Business Cloud API setup (API_REQUIREMENTS.md §1).
-3. **You**: add `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SECRET_KEY`, `ENCRYPTION_KEY` as GitHub Actions repo secrets (same values as your local `.env`) so CI can actually run the isolation test on every push.
-4. **Legal, before real tenants onboard**: Terms of Service, Privacy Policy, Acceptable Use Policy (ARCHITECTURE.md §13).
-5. **Me** (once you confirm): start Phase 2 — real topic/research/script/QA pipeline using the tenant's own Anthropic key.
+1. **You, to unblock a live demo of Phase 2**: get a tenant signed up (email confirmed) with an Anthropic key and a Tavily key connected via the API key vault, so a real topic → research → script → QA run can actually execute end-to-end. Not needed to keep building (Phase 3 doesn't depend on this), but needed to *see* Phase 2 work rather than just trust the tests.
+2. **You, still not started**: begin the Google Cloud OAuth consent screen → external/production verification process. This remains the **single longest external lead-time item in the whole project** and directly blocks onboarding any real (non-test) tenant — see ARCHITECTURE.md §9 and IMPLEMENTATION_PLAN.md Phase 0/6. A placeholder privacy policy page is enough to start the process.
+3. **You**: begin Meta Business Manager + WhatsApp Business Cloud API setup (API_REQUIREMENTS.md §1).
+4. **You**: add `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SECRET_KEY`, `ENCRYPTION_KEY` as GitHub Actions repo secrets (same values as your local `.env`) so CI can actually run the isolation test on every push.
+5. **Legal, before real tenants onboard**: Terms of Service, Privacy Policy, Acceptable Use Policy (ARCHITECTURE.md §13).
+6. **Me** (once you confirm): start Phase 3 — voice-over and visual generation/collection.
 
 ## Known risks to keep in view
 
@@ -78,4 +96,5 @@ Historical: all six planning docs below reflect the current design (a multi-tena
 - **2026-08-17**: Phase 0 started — repo scaffolding, FastAPI/Celery/Alembic skeleton, Docker Compose, CI workflow all in place and verified locally (tests/lint/type-check passing). Supabase project and Railway project (+ Redis service) provisioned. Blocked on a GitHub repo to deploy the `api` service.
 - **2026-08-17**: Phase 0 complete — pushed to [haniaw647-ui/youtube-agent](https://github.com/haniaw647-ui/youtube-agent), deployed `api` to Railway, verified `/health` live in production.
 - **2026-08-17**: Real `DATABASE_URL` wired into Railway and local `.env`, connection verified end-to-end (local + deployed).
-- **2026-08-17**: Phase 1 complete — 13-table multi-tenant schema with RLS applied to production; `tenant_session`/`service_session` DB layer proven with a real cross-tenant smoke test before building on it; Supabase Auth signup/login wired; channel CRUD + BYO API key vault; 15-stage stub Celery pipeline with parallel join and approval-gate pause/resume; automated isolation test passing against production; `api`/`worker-light`/`worker-heavy` all deployed and healthy on Railway (after fixing an OOM crash-loop in `worker-light` from Celery's default CPU-count concurrency). Next: Phase 2 (real topic/research/script/QA pipeline).
+- **2026-08-17**: Phase 1 complete — 13-table multi-tenant schema with RLS applied to production; `tenant_session`/`service_session` DB layer proven with a real cross-tenant smoke test before building on it; Supabase Auth signup/login wired; channel CRUD + BYO API key vault; 15-stage stub Celery pipeline with parallel join and approval-gate pause/resume; automated isolation test passing against production; `api`/`worker-light`/`worker-heavy` all deployed and healthy on Railway (after fixing an OOM crash-loop in `worker-light` from Celery's default CPU-count concurrency).
+- **2026-08-17**: Phase 2 complete — Anthropic + Tavily provider adapters; real topic_generation/topic_scoring/research/script_writing/script_qa stages replacing the Phase 1 stubs; script_qa's capped revision loop with human escalation; fixed a job_stages row-targeting bug the revision loop exposed; minimal server-rendered tenant dashboard with a working approval queue; unit tests for scoring/parsing/adapters (mocked, no API keys needed); redeployed and verified live. Next: Phase 3 (voice-over and visual generation/collection) — but a live demo of Phase 2 itself is waiting on a tenant with real Anthropic/Tavily keys connected.
