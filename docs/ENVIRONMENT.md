@@ -63,14 +63,21 @@ Per-tenant recipient numbers live in `channels.whatsapp_recipient_number` (DATA_
 
 | Variable | Required | Description |
 |---|---|---|
-| `MUSIC_LIBRARY_PATH` | no | Path/bucket prefix for the curated, license-cleared music set shipped by the platform (API_REQUIREMENTS.md §2) |
+| `MUSIC_LIBRARY_PATH` | no | Not yet read by any code. Phase 4's `background_music` stage generates a synthesized placeholder tone instead (`license_type='platform-placeholder-not-for-production'` on the asset) — sourcing a real curated/licensed set (API_REQUIREMENTS.md §2) is a content decision for the user, not something to fabricate. This var is reserved for when that's wired in. |
 
-## Whisper (subtitle alignment) — platform-run mode only
+## Subtitle timing — resolved without Whisper (Phase 4)
 
-| Variable | Required | Description |
-|---|---|---|
-| `WHISPER_MODE` | no | `platform_api` \| `tenant_api` \| `self_hosted` — if `platform_api`, uses the platform's own OpenAI key below; if `tenant_api`, reuses the tenant's own OpenAI key from `tenant_api_keys` instead |
-| `OPENAI_API_KEY` | conditional | Only needed if `WHISPER_MODE=platform_api` — i.e. the platform chooses to absorb this one small, low-differentiation cost itself rather than pushing it to tenants. Revisit this choice once real usage volume is known. |
+No `WHISPER_MODE` env var exists. The three options this was meant to decide
+between (platform-absorbed OpenAI cost, tenant's own key, self-hosted) turned
+out to be solving a harder problem than the pipeline actually has: we already
+know the exact narration text per scene (it's what we synthesized speech
+from), so there's nothing to *transcribe* — only timing to estimate. Subtitle
+cue timing is computed from each scene's word count scaled against the real
+(ffprobe-measured) narration audio duration — see
+`src/workers/stages/video_assembly.py` and `_srt.py`. No API call, no cost,
+no extra dependency. Revisit only if word-count-proportional timing proves
+visibly wrong against real speech (e.g. TTS providers with very uneven
+pacing) — real Whisper alignment remains a valid upgrade path if so.
 
 ## Cost/safety guardrails
 

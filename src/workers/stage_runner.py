@@ -8,11 +8,14 @@ from sqlalchemy import text
 from src.models.pipeline import PIPELINE_STAGES
 from src.orchestrator.db import service_session
 from src.workers.stages import (
+    background_music,
     research,
     script_qa,
     script_writing,
+    subtitle_burn_in,
     topic_generation,
     topic_scoring,
+    video_assembly,
     visual_generation,
     voice_over,
 )
@@ -33,7 +36,7 @@ STAGE_AFTER_PARALLEL = "video_assembly"
 
 # Real implementations, added stage-by-stage as each phase replaces the stub.
 # Anything not listed here still gets the stub behavior (fake artifact, marks
-# done) — that's stages 8 onward (video assembly through upload), due in Phase 4+.
+# done) — that's thumbnail_generation onward, due in Phase 5+.
 StageFn = Callable[[str, str], Awaitable[dict]]
 STAGE_IMPLEMENTATIONS: dict[str, StageFn] = {
     "topic_generation": topic_generation.run,
@@ -43,6 +46,9 @@ STAGE_IMPLEMENTATIONS: dict[str, StageFn] = {
     "script_qa": script_qa.run,
     "voice_over": voice_over.run,
     "visual_generation": visual_generation.run,
+    "video_assembly": video_assembly.run,
+    "subtitle_burn_in": subtitle_burn_in.run,
+    "background_music": background_music.run,
 }
 
 
