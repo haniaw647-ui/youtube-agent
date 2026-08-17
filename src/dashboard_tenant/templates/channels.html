@@ -2,7 +2,7 @@
 {% block title %}Channels{% endblock %}
 {% block content %}
 <h2>Channels</h2>
-{% if connected %}<p style="color: #0a7d2c;">YouTube channel connected successfully.</p>{% endif %}
+{% if connected %}<p class="success">YouTube channel connected successfully.</p>{% endif %}
 {% if error %}<p class="error">Connection failed ({{ error }}). Please try again.</p>{% endif %}
 
 <div class="card">
@@ -12,7 +12,7 @@
     <input type="text" name="niche" placeholder="Niche (e.g. personal finance)">
     <input type="text" name="audience" placeholder="Target audience">
     <input type="text" name="style" placeholder="Style / tone notes">
-    <select name="language" style="padding: 0.4rem; margin-bottom: 0.5rem; width: 100%;">
+    <select name="language">
       <option value="en" selected>English</option>
       <option value="es">Spanish</option>
       <option value="fr">French</option>

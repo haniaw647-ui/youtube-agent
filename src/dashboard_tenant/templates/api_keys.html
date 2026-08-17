@@ -3,12 +3,12 @@
 {% block content %}
 <h2>API keys</h2>
 <p>Bring your own provider keys — the platform never bills for AI usage. Keys are encrypted at rest and never shown in full once saved.</p>
-{% if saved %}<p style="color: #0a7d2c;">Saved key for {{ saved }}.</p>{% endif %}
+{% if saved %}<p class="success">Saved key for {{ saved }}.</p>{% endif %}
 
 <div class="card">
   <h3>Add / update a key</h3>
   <form method="post" action="/dashboard/api-keys">
-    <select name="provider" style="padding: 0.4rem; margin-bottom: 0.5rem; width: 100%;">
+    <select name="provider">
       {% for p in providers %}
         <option value="{{ p }}">{{ p }}</option>
       {% endfor %}

@@ -4,7 +4,7 @@
 <h2>Jobs</h2>
 
 <form method="get" action="/dashboard/jobs" style="max-width: 300px;">
-  <select name="channel_id" onchange="this.form.submit()" style="padding: 0.4rem; margin-bottom: 0.5rem; width: 100%;">
+  <select name="channel_id" onchange="this.form.submit()">
     <option value="">All channels</option>
     {% for c in channels %}
       <option value="{{ c.id }}" {% if selected_channel_id == c.id|string %}selected{% endif %}>{{ c.name }}</option>
