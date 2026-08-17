@@ -26,6 +26,31 @@
     <div class="script-content">{{ item.detail.script.content }}</div>
   {% endif %}
 
+  {% if item.detail.job_meta %}
+    <p><strong>Title:</strong> {{ item.detail.job_meta.title }}</p>
+    <p><strong>Description:</strong></p>
+    <div class="script-content">{{ item.detail.job_meta.description }}</div>
+    <p><strong>Tags:</strong> {{ item.detail.job_meta.tags | join(', ') }}</p>
+    {% if item.detail.video_storage_path %}
+      <p><strong>Final video:</strong> <code>{{ item.detail.video_storage_path }}</code></p>
+    {% endif %}
+    {% if item.detail.final_qa %}
+      <p><strong>Final QA: {{ 'PASSED' if item.detail.final_qa.passed else 'FAILED' }}</strong></p>
+      <table>
+        <tr><th>Check</th><th>Result</th></tr>
+        {% for check_name, check_result in item.detail.final_qa.checks.items() %}
+        <tr><td>{{ check_name }}</td><td>{{ 'OK' if check_result else 'FAILED' }}</td></tr>
+        {% endfor %}
+      </table>
+      {% if item.detail.final_qa.license_issues %}
+        <p class="error"><strong>License issues:</strong> {{ item.detail.final_qa.license_issues | join('; ') }}</p>
+      {% endif %}
+      {% if item.detail.final_qa.content_flags %}
+        <p class="error"><strong>Content flags:</strong> {{ item.detail.final_qa.content_flags | join('; ') }}</p>
+      {% endif %}
+    {% endif %}
+  {% endif %}
+
   <form method="post" action="/dashboard/approvals/{{ item.job_id }}/{{ item.stage }}" style="margin-top: 1rem;">
     <button type="submit" name="decision" value="approved">Approve</button>
     <button type="submit" name="decision" value="rejected">Reject</button>

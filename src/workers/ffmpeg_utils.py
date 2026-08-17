@@ -39,6 +39,36 @@ async def probe_duration_seconds(path: str) -> float:
     return float(json.loads(stdout)["format"]["duration"])
 
 
+async def probe_video_info(path: str) -> dict:
+    """Resolution + stream presence, for final_qa's sync/aspect-ratio checks."""
+    proc = await asyncio.create_subprocess_exec(
+        FFPROBE_BIN,
+        "-v",
+        "error",
+        "-show_entries",
+        "stream=width,height,codec_type:format=duration",
+        "-of",
+        "json",
+        path,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise FfmpegError(stderr.decode(errors="replace")[-2000:])
+    data = json.loads(stdout)
+    streams = data.get("streams", [])
+    video_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
+    has_audio = any(s.get("codec_type") == "audio" for s in streams)
+    return {
+        "width": video_stream.get("width") if video_stream else None,
+        "height": video_stream.get("height") if video_stream else None,
+        "has_video": video_stream is not None,
+        "has_audio": has_audio,
+        "duration": float(data.get("format", {}).get("duration", 0)),
+    }
+
+
 def _escape_filter_path(path: str) -> str:
     """ffmpeg filtergraph args use ':' and other chars as separators — needed
     for the subtitles filter specifically — do not use this for the concat

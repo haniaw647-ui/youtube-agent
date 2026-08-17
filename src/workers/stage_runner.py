@@ -9,6 +9,7 @@ from src.models.pipeline import PIPELINE_STAGES
 from src.orchestrator.db import service_session
 from src.workers.stages import (
     background_music,
+    final_qa,
     metadata_generation,
     research,
     script_qa,
@@ -38,7 +39,7 @@ STAGE_AFTER_PARALLEL = "video_assembly"
 
 # Real implementations, added stage-by-stage as each phase replaces the stub.
 # Anything not listed here still gets the stub behavior (fake artifact, marks
-# done) — that's final_qa onward, due in Phase 6+.
+# done) — that's youtube_upload and whatsapp_notification, due in Phase 7+.
 StageFn = Callable[[str, str], Awaitable[dict]]
 STAGE_IMPLEMENTATIONS: dict[str, StageFn] = {
     "topic_generation": topic_generation.run,
@@ -53,6 +54,7 @@ STAGE_IMPLEMENTATIONS: dict[str, StageFn] = {
     "background_music": background_music.run,
     "thumbnail_generation": thumbnail_generation.run,
     "metadata_generation": metadata_generation.run,
+    "final_qa": final_qa.run,
 }
 
 
@@ -127,6 +129,9 @@ async def execute_stage(job_id: str, tenant_id: str, stage: str) -> None:
     if stage == "script_qa":
         await _advance_script_qa(job_id, tenant_id, output_ref)
         return
+    if stage == "final_qa":
+        await _advance_final_qa(job_id, tenant_id, output_ref)
+        return
 
     await _advance(job_id, tenant_id, stage)
 
@@ -142,6 +147,19 @@ async def _advance_script_qa(job_id: str, tenant_id: str, result: dict) -> None:
         await _mark_awaiting_approval(job_id, uuid.UUID(tenant_id), "script_qa")
     else:
         raise ValueError(f"Unexpected script_qa verdict: {verdict!r}")
+
+
+async def _advance_final_qa(job_id: str, tenant_id: str, result: dict) -> None:
+    """A failed checklist (including an unresolved license — ARCHITECTURE.md
+    §11) always forces human sign-off before youtube_upload, regardless of
+    the channel's own approval_gates config — this is the one gate that isn't
+    tenant-overridable off. A clean pass still respects the channel's own
+    gate setting via the normal _advance path, which new channels default to
+    on (routes/channels.py) but a tenant can turn off for full autonomy."""
+    if not result.get("passed", False):
+        await _mark_awaiting_approval(job_id, uuid.UUID(tenant_id), "youtube_upload")
+        return
+    await _advance(job_id, tenant_id, "final_qa")
 
 
 async def _channel_approval_gates(job_id: str) -> dict:

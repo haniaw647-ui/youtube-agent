@@ -15,6 +15,7 @@ from src.workers.ffmpeg_utils import (
     generate_placeholder_music,
     mix_background_music,
     probe_duration_seconds,
+    probe_video_info,
 )
 
 
@@ -79,6 +80,12 @@ async def test_full_video_pipeline_produces_valid_output():
         assert final_duration == pytest.approx(captioned_duration, abs=0.5)
 
         assert os.path.getsize(final) > 1000
+
+        info = await probe_video_info(final)
+        assert info["width"] == 1920
+        assert info["height"] == 1080
+        assert info["has_video"] is True
+        assert info["has_audio"] is True
 
 
 @pytest.mark.asyncio

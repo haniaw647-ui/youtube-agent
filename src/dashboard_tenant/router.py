@@ -111,6 +111,47 @@ async def approvals_list(request: Request, tenant_id=Depends(require_tenant)) ->
                 detail["qa_feedback"] = (
                     (qa["output_ref"] if qa else {}).get("feedback") if qa else None
                 )
+            if p["stage"] == "youtube_upload":
+                job_meta = (
+                    (
+                        await session.execute(
+                            text("SELECT title, description, tags FROM jobs WHERE id = :job_id"),
+                            {"job_id": p["job_id"]},
+                        )
+                    )
+                    .mappings()
+                    .first()
+                )
+                final_qa_row = (
+                    (
+                        await session.execute(
+                            text(
+                                "SELECT output_ref FROM job_stages WHERE job_id = :job_id "
+                                "AND stage = 'final_qa' AND status = 'done' "
+                                "ORDER BY started_at DESC LIMIT 1"
+                            ),
+                            {"job_id": p["job_id"]},
+                        )
+                    )
+                    .mappings()
+                    .first()
+                )
+                video_asset = (
+                    (
+                        await session.execute(
+                            text(
+                                "SELECT storage_path FROM assets WHERE job_id = :job_id "
+                                "AND type = 'video_final' ORDER BY created_at DESC LIMIT 1"
+                            ),
+                            {"job_id": p["job_id"]},
+                        )
+                    )
+                    .mappings()
+                    .first()
+                )
+                detail["job_meta"] = job_meta
+                detail["final_qa"] = final_qa_row["output_ref"] if final_qa_row else None
+                detail["video_storage_path"] = video_asset["storage_path"] if video_asset else None
             items.append({**p, "detail": detail})
 
     return templates.TemplateResponse(request, "approvals.html", {"items": items})
