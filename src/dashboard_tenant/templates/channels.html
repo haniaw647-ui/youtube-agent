@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Channels{% endblock %}
+{% block content %}
+<h2>Channels</h2>
+{% if connected %}<p style="color: #0a7d2c;">YouTube channel connected successfully.</p>{% endif %}
+{% if error %}<p class="error">Connection failed ({{ error }}). Please try again.</p>{% endif %}
+
+{% if not channels %}
+  <p>No channels yet — create one via the API (<code>POST /channels</code>) to get started.</p>
+{% endif %}
+
+{% for c in channels %}
+<div class="card">
+  <h3>{{ c.name }}</h3>
+  <p>{{ c.niche or 'No niche set' }}</p>
+  {% if c.youtube_channel_id %}
+    <p><strong>YouTube:</strong> connected (channel ID <code>{{ c.youtube_channel_id }}</code>)</p>
+    <a href="/channels/{{ c.id }}/youtube/connect">Reconnect / switch channel</a>
+  {% else %}
+    <p><strong>YouTube:</strong> not connected</p>
+    <a href="/channels/{{ c.id }}/youtube/connect"><button type="button">Connect YouTube</button></a>
+  {% endif %}
+</div>
+{% endfor %}
+{% endblock %}

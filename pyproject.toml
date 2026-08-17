@@ -21,6 +21,8 @@ dependencies = [
     "python-multipart>=0.0.12",
     "aioboto3>=13.0",
     "pillow>=10.1",
+    "google-api-python-client>=2.140",
+    "google-auth>=2.34",
 ]
 
 [project.optional-dependencies]

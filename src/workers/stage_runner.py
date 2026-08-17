@@ -1,12 +1,12 @@
 import json
 import uuid
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
 
 from sqlalchemy import text
 
 from src.models.pipeline import PIPELINE_STAGES
 from src.orchestrator.db import service_session
+from src.orchestrator.timeutil import utcnow_naive
 from src.workers.stages import (
     background_music,
     final_qa,
@@ -21,6 +21,7 @@ from src.workers.stages import (
     video_assembly,
     visual_generation,
     voice_over,
+    youtube_upload,
 )
 
 # Matches the async/sync split in ARCHITECTURE.md §8: text/API-bound stages are
@@ -39,7 +40,7 @@ STAGE_AFTER_PARALLEL = "video_assembly"
 
 # Real implementations, added stage-by-stage as each phase replaces the stub.
 # Anything not listed here still gets the stub behavior (fake artifact, marks
-# done) — that's youtube_upload and whatsapp_notification, due in Phase 7+.
+# done) — that's whatsapp_notification, due in Phase 8.
 StageFn = Callable[[str, str], Awaitable[dict]]
 STAGE_IMPLEMENTATIONS: dict[str, StageFn] = {
     "topic_generation": topic_generation.run,
@@ -55,6 +56,7 @@ STAGE_IMPLEMENTATIONS: dict[str, StageFn] = {
     "thumbnail_generation": thumbnail_generation.run,
     "metadata_generation": metadata_generation.run,
     "final_qa": final_qa.run,
+    "youtube_upload": youtube_upload.run,
 }
 
 
@@ -79,7 +81,7 @@ async def _insert_running_stage(job_id: str, tenant_id: uuid.UUID, stage: str) -
                     "job_id": job_id,
                     "tenant_id": tenant_id,
                     "stage": stage,
-                    "now": datetime.now(UTC),
+                    "now": utcnow_naive(),
                 },
             )
         ).scalar_one()
@@ -107,7 +109,7 @@ async def execute_stage(job_id: str, tenant_id: str, stage: str) -> None:
                     "UPDATE job_stages SET status = 'failed', finished_at = :now, error = :error "
                     "WHERE id = :id"
                 ),
-                {"id": stage_row_id, "now": datetime.now(UTC), "error": str(e)[:2000]},
+                {"id": stage_row_id, "now": utcnow_naive(), "error": str(e)[:2000]},
             )
             await session.commit()
         raise
@@ -118,11 +120,11 @@ async def execute_stage(job_id: str, tenant_id: str, stage: str) -> None:
                 "UPDATE job_stages SET status = 'done', finished_at = :now, "
                 "output_ref = :output_ref WHERE id = :id"
             ),
-            {"id": stage_row_id, "now": datetime.now(UTC), "output_ref": json.dumps(output_ref)},
+            {"id": stage_row_id, "now": utcnow_naive(), "output_ref": json.dumps(output_ref)},
         )
         await session.execute(
             text("UPDATE jobs SET current_stage = :stage, updated_at = :now WHERE id = :job_id"),
-            {"stage": stage, "now": datetime.now(UTC), "job_id": job_id},
+            {"stage": stage, "now": utcnow_naive(), "job_id": job_id},
         )
         await session.commit()
 

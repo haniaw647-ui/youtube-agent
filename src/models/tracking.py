@@ -24,6 +24,9 @@ class ApiCallLog(Base, TenantScopedMixin, TimestampMixin):
     status: Mapped[str] = mapped_column(nullable=False)
     cost_usd: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False, server_default="0")
     duration_ms: Mapped[int | None] = mapped_column(nullable=True)
+    # YouTube Data API quota units (not dollars) — the platform-wide shared
+    # resource from ARCHITECTURE.md §9. Only populated for provider='youtube_data_api'.
+    quota_units: Mapped[int | None] = mapped_column(nullable=True)
 
 
 class Approval(Base, TenantScopedMixin):

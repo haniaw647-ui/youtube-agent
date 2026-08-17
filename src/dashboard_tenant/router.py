@@ -40,6 +40,31 @@ async def logout() -> RedirectResponse:
     return response
 
 
+@router.get("/channels", response_class=HTMLResponse)
+async def channels_list(
+    request: Request,
+    tenant_id=Depends(require_tenant),
+    error: str | None = None,
+    connected: str | None = None,
+) -> HTMLResponse:
+    async with tenant_session(tenant_id) as session:
+        channels = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT id, name, niche, youtube_channel_id FROM channels "
+                        "ORDER BY created_at"
+                    )
+                )
+            )
+            .mappings()
+            .all()
+        )
+    return templates.TemplateResponse(
+        request, "channels.html", {"channels": channels, "error": error, "connected": connected}
+    )
+
+
 @router.get("/approvals", response_class=HTMLResponse)
 async def approvals_list(request: Request, tenant_id=Depends(require_tenant)) -> HTMLResponse:
     async with tenant_session(tenant_id) as session:

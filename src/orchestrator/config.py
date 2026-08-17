@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     r2_bucket_name: str = ""
     r2_public_base_url: str = ""
 
+    # Shared platform-level YouTube OAuth client — every tenant authorizes
+    # this same client against their own channel (ARCHITECTURE.md §9).
+    youtube_oauth_client_id: str = ""
+    youtube_oauth_client_secret: str = ""
+    youtube_oauth_redirect_uri: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:
