@@ -9,9 +9,12 @@ from src.orchestrator.security import decrypt, encrypt
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
-# youtube.upload covers status/thumbnails too; readonly isn't separately
-# needed since upload scope already permits reading the caller's own channel.
-SCOPES = "https://www.googleapis.com/auth/youtube.upload"
+# youtube.upload alone was assumed to also cover reading the caller's own
+# channel via channels.list (used right after the token exchange to store
+# youtube_channel_id) — wrong in practice: Google rejected that call with
+# "Request had insufficient authentication scopes" the first time a real
+# user completed the flow. youtube.readonly is what that read actually needs.
+SCOPES = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly"
 
 
 class YouTubeOAuthError(Exception):
