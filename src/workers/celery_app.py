@@ -17,6 +17,21 @@ celery_app.conf.task_routes = {
     "src.workers.tasks.heavy.*": {"queue": "heavy"},
 }
 
+# RUNBOOK.md §1/§2: default Celery acks a task the moment a worker *receives*
+# it, before running it — a worker crash mid-task (OOM, redeploy, SIGKILL)
+# loses the task with no retry, orphaning the job_stages row it already
+# inserted. task_acks_late defers the ack until the task actually finishes
+# (success or exception), and task_reject_on_worker_lost explicitly requeues
+# it if the worker dies mid-task rather than leaving it stuck until Redis's
+# broker-level visibility timeout. Trade-off, accepted deliberately: if a
+# worker dies *after* real work succeeded (e.g. an LLM call already spent a
+# tenant's own money) but before acking, the task redelivers and reruns from
+# the top — a duplicate job_stages row and a second provider API call, not
+# just a no-op retry. Reliability against silent stuck jobs was judged worth
+# that cost.
+celery_app.conf.task_acks_late = True
+celery_app.conf.task_reject_on_worker_lost = True
+
 # Phase 9 analytics pulls — beat runs embedded in worker-light (-B flag), not
 # a dedicated service (see run_analytics_pull's docstring for why). Every 6
 # hours is cheap: get_video_stats costs ~1 quota unit per video, nowhere near

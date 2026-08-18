@@ -17,9 +17,9 @@ All "check the ops dashboard" steps assume `/admin` (internal ops dashboard, Pha
    - `awaiting_approval` — working as designed. The tenant hasn't reviewed it yet (check the channel's `approval_gates`). Not a bug; a nudge to the tenant is the fix.
    - `running`, with no corresponding `done`/`failed` row and no newer stage — **this is the real "stuck" case.**
 
-**Root cause of the real stuck case — a known gap, not yet fixed**: Celery's default `task_acks_late = False` is unchanged in `src/workers/celery_app.py`. A task is acknowledged (removed from Redis) the moment a worker *receives* it, before it runs — so if the worker process dies mid-task (OOM, `docker kill`, Railway redeploy interrupting an in-flight task), the task is already gone from the broker. It is never retried, `execute_stage`'s `except` block never runs (the process is dead, not raising a Python exception), and the `job_stages` row it inserted at the *start* of the stage (`_insert_running_stage`) sits at `status='running'` forever. There is currently no automated stale-job detector.
+**Root cause of the real stuck case — fixed**: Celery's default `task_acks_late = False` acknowledged a task (removed it from Redis) the moment a worker *received* it, before running it — so if the worker process died mid-task (OOM, `docker kill`, Railway redeploy interrupting an in-flight task), the task was already gone from the broker with no retry, and the `job_stages` row inserted at the *start* of the stage (`_insert_running_stage`) sat at `status='running'` forever. Fixed in `src/workers/celery_app.py`: `task_acks_late = True` (ack only after the task finishes) plus `task_reject_on_worker_lost = True` (explicit prompt requeue if the worker dies mid-task, rather than waiting on Redis's broker-level visibility timeout). **Accepted trade-off**: if a worker crashes *after* doing real work (e.g., after an LLM call already succeeded and spent a tenant's own money) but *before* acking, the task redelivers and reruns from the top — a duplicate `job_stages` row and a second provider API call. Judged worth it over silently-stuck jobs.
 
-**Manual recovery** (until the gap above is closed):
+**If a job is still found stuck** (e.g. from before this fix deployed, or a genuinely wedged task): manual recovery —
 1. Confirm via Railway logs (`worker-light` or `worker-heavy`, whichever queue the stuck stage routes to — see `HEAVY_STAGES` in `stage_runner.py`) that there's no worker actively processing it — no matching `job_id` in recent log lines.
 2. Mark the orphaned `job_stages` row `failed` directly:
    ```sql
@@ -28,8 +28,6 @@ All "check the ops dashboard" steps assume `/admin` (internal ops dashboard, Pha
    WHERE id = '<the stuck row's id>';
    ```
 3. Either re-enqueue the same stage (`enqueue_stage(job_id, tenant_id, stage)` from a Python shell against production) to retry it, or mark the job failed and let the tenant re-run manually via a fresh job if the underlying work isn't easily resumable.
-
-**Real fix, not yet applied** (flagging for a deliberate decision, not applying unilaterally — it changes retry semantics platform-wide): set `celery_app.conf.task_acks_late = True`. This makes Celery redeliver a task if the worker dies before acking, closing the stuck-job hole. Trade-off: if a worker crashes *after* doing real work (e.g., after an LLM call succeeded) but *before* acking, the task redelivers and reruns from the top — for most stages this just means a duplicate `job_stages` row and a second provider API call (real cost, since these are tenant BYO keys). Worth doing, but the cost/reliability trade-off should be a conscious call, not a silent config flip.
 
 ---
 
@@ -44,7 +42,7 @@ All "check the ops dashboard" steps assume `/admin` (internal ops dashboard, Pha
 
 **Resolution**:
 1. If crash-looping: fix the root cause (usually a config/memory issue) and redeploy — see PROJECT_STATUS.md's deployment pattern (`railway-agent` to force a fresh build, since auto-deploy-on-push isn't reliable here).
-2. Jobs that were mid-stage when the worker died: same manual-recovery procedure as §1 (they're the same underlying gap — no `acks_late`).
+2. Jobs that were mid-stage when the worker died: with `task_acks_late` now on (§1), these should redeliver and rerun automatically once a healthy worker is available — check `/admin/jobs` after the worker recovers before assuming manual intervention is needed. Fall back to §1's manual recovery only if a job is still stuck after that.
 3. Once the worker is back up and healthy, no further action needed for jobs that hadn't started yet — they're still queued in Redis and will be picked up normally.
 
 ---
