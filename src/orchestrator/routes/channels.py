@@ -38,6 +38,13 @@ class ChannelCreate(BaseModel):
 
 class ChannelUpdate(BaseModel):
     whatsapp_recipient_number: str | None = None
+    # Phase 10: "per-tenant auto-approve rules for channels configured for
+    # full autonomy" + "Celery Beat triggers topic generation on each
+    # channel's cadence" — both were only ever settable at creation time
+    # before this. See src/workers/scheduler.py for the recognized
+    # posting_frequency values.
+    approval_gates: dict[str, bool] | None = None
+    posting_frequency: str | None = None
 
 
 class ChannelOut(BaseModel):
@@ -111,16 +118,24 @@ async def update_channel(
     body: ChannelUpdate,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
 ) -> dict[str, Any]:
+    # Only touch fields the caller actually included — a PATCH that sets just
+    # posting_frequency must never silently null out approval_gates, etc.
+    updates = body.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    if "approval_gates" in updates:
+        updates["approval_gates"] = json.dumps(updates["approval_gates"])
+
+    set_clause = ", ".join(f"{field} = :{field}" for field in updates)
     async with tenant_session(tenant_id) as session:
         row = (
             (
                 await session.execute(
                     text(
-                        "UPDATE channels "
-                        "SET whatsapp_recipient_number = :whatsapp_recipient_number "
+                        f"UPDATE channels SET {set_clause} "
                         f"WHERE id = :id RETURNING {CHANNEL_FIELDS}"
                     ),
-                    {"id": channel_id, "whatsapp_recipient_number": body.whatsapp_recipient_number},
+                    {"id": channel_id, **updates},
                 )
             )
             .mappings()

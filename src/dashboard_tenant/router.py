@@ -18,6 +18,7 @@ from src.orchestrator.routes.tenant_keys import SUPPORTED_PROVIDERS
 from src.orchestrator.security import decrypt, encrypt, mask
 from src.orchestrator.supabase_auth import SupabaseAuthError, login, signup
 from src.orchestrator.tenants import ensure_tenant
+from src.workers.scheduler import POSTING_FREQUENCIES
 from src.workers.stage_runner import enqueue_stage, resume_after_approval
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -104,7 +105,8 @@ async def channels_list(
             (
                 await session.execute(
                     text(
-                        "SELECT id, name, niche, youtube_channel_id, whatsapp_recipient_number "
+                        "SELECT id, name, niche, youtube_channel_id, whatsapp_recipient_number, "
+                        "approval_gates, posting_frequency "
                         "FROM channels ORDER BY created_at"
                     )
                 )
@@ -115,7 +117,13 @@ async def channels_list(
     return templates.TemplateResponse(
         request,
         "channels.html",
-        {"channels": channels, "error": error, "connected": connected, "job_error": job_error},
+        {
+            "channels": channels,
+            "error": error,
+            "connected": connected,
+            "job_error": job_error,
+            "posting_frequencies": list(POSTING_FREQUENCIES.keys()),
+        },
     )
 
 
@@ -143,6 +151,32 @@ async def create_channel_submit(
                 "language": language,
                 "style": style or None,
                 "approval_gates": json.dumps(DEFAULT_APPROVAL_GATES),
+            },
+        )
+    return RedirectResponse("/dashboard/channels", status_code=303)
+
+
+@router.post("/channels/{channel_id}/settings")
+async def update_channel_settings(
+    channel_id: str,
+    require_upload_approval: str = Form("off"),
+    posting_frequency: str = Form(""),
+    tenant_id=Depends(require_tenant),
+) -> RedirectResponse:
+    # Phase 10: lets a tenant configure a "fully autonomous" channel (no
+    # human gate before youtube_upload) and/or an unattended posting cadence
+    # — both were previously only settable at creation time via the raw API.
+    approval_gates = {"youtube_upload": require_upload_approval == "on"}
+    async with tenant_session(tenant_id) as session:
+        await session.execute(
+            text(
+                "UPDATE channels SET approval_gates = :gates, posting_frequency = :freq "
+                "WHERE id = :id"
+            ),
+            {
+                "gates": json.dumps(approval_gates),
+                "freq": posting_frequency or None,
+                "id": channel_id,
             },
         )
     return RedirectResponse("/dashboard/channels", status_code=303)

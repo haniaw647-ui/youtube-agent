@@ -6,8 +6,9 @@ from src.orchestrator.storage import get_storage_provider
 from src.orchestrator.youtube_quota import (
     THUMBNAIL_SET_COST_UNITS,
     UPLOAD_COST_UNITS,
-    record_quota_usage,
-    would_exceed_daily_quota,
+    QuotaExceededError,
+    release_quota_reservation,
+    reserve_quota_or_raise,
 )
 from src.providers.storage.base import StorageProvider
 from src.providers.youtube.youtube_api import YouTubeAPIProvider
@@ -83,43 +84,54 @@ async def run(job_id: str, tenant_id: str) -> dict:
         raise RuntimeError(f"No final video asset found for job {job_id}")
 
     upload_cost = UPLOAD_COST_UNITS + (THUMBNAIL_SET_COST_UNITS if thumbnail_asset else 0)
-    if await would_exceed_daily_quota(upload_cost):
+    try:
+        # Atomic check-and-record (Phase 10) — the old two-step "check, then
+        # separately record after upload" had a real race under concurrency:
+        # two uploads landing at nearly the same instant could both pass the
+        # check before either recorded usage, breaching the shared ceiling.
+        # See tests/test_quota_concurrency.py.
+        reservation_id = await reserve_quota_or_raise(
+            tenant_id, job_id, "videos.insert", upload_cost
+        )
+    except QuotaExceededError as e:
         raise RuntimeError(
             "Platform-wide YouTube API daily quota would be exceeded by this upload — "
             "failing loudly here rather than letting Google's API reject it later with a "
             "less actionable error. See ARCHITECTURE.md §9: request a quota increase, or "
             "this will clear at UTC midnight."
+        ) from e
+
+    try:
+        storage = get_storage_provider()
+        video_bytes = await storage.download_bytes(
+            StorageProvider.key_from_storage_path(video_asset["storage_path"])
+        )
+        thumbnail_bytes = None
+        if thumbnail_asset:
+            thumbnail_bytes = await storage.download_bytes(
+                StorageProvider.key_from_storage_path(thumbnail_asset["storage_path"])
+            )
+
+        refresh_token = decrypt(channel["youtube_refresh_token_encrypted"])
+        privacy_status = (channel["provider_config"] or {}).get(
+            "youtube_privacy_status", DEFAULT_PRIVACY_STATUS
         )
 
-    storage = get_storage_provider()
-    video_bytes = await storage.download_bytes(
-        StorageProvider.key_from_storage_path(video_asset["storage_path"])
-    )
-    thumbnail_bytes = None
-    if thumbnail_asset:
-        thumbnail_bytes = await storage.download_bytes(
-            StorageProvider.key_from_storage_path(thumbnail_asset["storage_path"])
+        provider = YouTubeAPIProvider()
+        result = await provider.upload_video(
+            refresh_token=refresh_token,
+            video_bytes=video_bytes,
+            title=job_row["title"] or "Untitled",
+            description=job_row["description"] or "",
+            tags=job_row["tags"] or [],
+            privacy_status=privacy_status,
+            thumbnail_bytes=thumbnail_bytes,
         )
-
-    refresh_token = decrypt(channel["youtube_refresh_token_encrypted"])
-    privacy_status = (channel["provider_config"] or {}).get(
-        "youtube_privacy_status", DEFAULT_PRIVACY_STATUS
-    )
-
-    provider = YouTubeAPIProvider()
-    result = await provider.upload_video(
-        refresh_token=refresh_token,
-        video_bytes=video_bytes,
-        title=job_row["title"] or "Untitled",
-        description=job_row["description"] or "",
-        tags=job_row["tags"] or [],
-        privacy_status=privacy_status,
-        thumbnail_bytes=thumbnail_bytes,
-    )
-
-    await record_quota_usage(tenant_id, job_id, "videos.insert", UPLOAD_COST_UNITS)
-    if thumbnail_bytes:
-        await record_quota_usage(tenant_id, job_id, "thumbnails.set", THUMBNAIL_SET_COST_UNITS)
+    except Exception:
+        # The reservation was speculative — release it so a failed attempt
+        # doesn't permanently cost real quota that was never actually spent.
+        await release_quota_reservation(reservation_id)
+        raise
 
     async with service_session() as session:
         await session.execute(

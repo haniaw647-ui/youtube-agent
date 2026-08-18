@@ -4,6 +4,7 @@ import logging
 from src.workers.analytics import pull_due_snapshots
 from src.workers.celery_app import celery_app
 from src.workers.failure_notify import notify_job_failure
+from src.workers.scheduler import run_scheduled_jobs
 from src.workers.stage_runner import execute_stage
 
 logger = logging.getLogger(__name__)
@@ -34,3 +35,13 @@ def run_analytics_pull() -> None:
     so a missed or doubled-up tick can't duplicate or lose a snapshot."""
     result = asyncio.run(pull_due_snapshots())
     logger.info("analytics pull complete: %s", result)
+
+
+@celery_app.task(name="src.workers.tasks.light.run_scheduler_tick")
+def run_scheduler_tick() -> None:
+    """IMPLEMENTATION_PLAN.md Phase 10: 'Celery Beat triggers topic generation
+    on each channel's cadence.' Also embedded in worker-light's beat, same
+    reasoning as run_analytics_pull. Skips (doesn't fail) any channel whose
+    tenant is at its Phase 9 guardrail limit — picked up on a later tick."""
+    result = asyncio.run(run_scheduled_jobs())
+    logger.info("scheduler tick complete: %s", result)

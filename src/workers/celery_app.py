@@ -26,4 +26,10 @@ celery_app.conf.beat_schedule = {
         "task": "src.workers.tasks.light.run_analytics_pull",
         "schedule": crontab(minute=0, hour="*/6"),
     },
+    # Phase 10: hourly is fine-grained enough for the coarsest cadence we
+    # support (daily) without hammering the DB with an unnecessary scan.
+    "run-scheduled-jobs": {
+        "task": "src.workers.tasks.light.run_scheduler_tick",
+        "schedule": crontab(minute=0),
+    },
 }
