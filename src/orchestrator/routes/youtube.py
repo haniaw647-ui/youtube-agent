@@ -4,9 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy import text
 
+from src.dashboard_tenant.auth import require_tenant
 from src.orchestrator.db import tenant_session
 from src.orchestrator.security import encrypt
-from src.orchestrator.supabase_auth import get_current_tenant_id
 from src.orchestrator.youtube_oauth import (
     YouTubeOAuthError,
     build_authorization_url,
@@ -21,8 +21,15 @@ router = APIRouter(tags=["youtube"])
 
 @router.get("/channels/{channel_id}/youtube/connect")
 async def youtube_connect(
-    channel_id: uuid.UUID, tenant_id: uuid.UUID = Depends(get_current_tenant_id)
+    channel_id: uuid.UUID, tenant_id: uuid.UUID = Depends(require_tenant)
 ) -> RedirectResponse:
+    # This is only ever reached via a browser link click from the dashboard
+    # (channels.html's "Connect YouTube" button) — never a programmatic API
+    # call, since redirecting to Google's consent screen is inherently a
+    # browser-navigation flow. A browser link click can't carry a bearer
+    # token, so this needs the dashboard's cookie session, not the raw API's
+    # Authorization-header auth (get_current_tenant_id) it was built with —
+    # which meant this button could never actually work for a real user.
     async with tenant_session(tenant_id) as session:
         channel = (
             (
