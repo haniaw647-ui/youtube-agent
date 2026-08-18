@@ -11,12 +11,13 @@ from sqlalchemy import text
 
 from src.dashboard_tenant.auth import SESSION_COOKIE, require_tenant
 from src.models.pipeline import PIPELINE_STAGES
+from src.orchestrator.config import get_settings
 from src.orchestrator.db import tenant_session
 from src.orchestrator.guardrails import TenantLimitExceeded, check_tenant_job_limits
 from src.orchestrator.routes.channels import DEFAULT_APPROVAL_GATES, _delete_channel_cascade
 from src.orchestrator.routes.tenant_keys import SUPPORTED_PROVIDERS
 from src.orchestrator.security import decrypt, encrypt, mask
-from src.orchestrator.supabase_auth import SupabaseAuthError, login, signup
+from src.orchestrator.supabase_auth import SupabaseAuthError, login, request_password_reset, signup
 from src.orchestrator.tenants import ensure_tenant
 from src.workers.scheduler import POSTING_FREQUENCIES
 from src.workers.stage_runner import enqueue_stage, resume_after_approval
@@ -82,6 +83,39 @@ async def signup_submit(
 
     return templates.TemplateResponse(
         request, "signup.html", {"error": None, "confirm_email": email}
+    )
+
+
+@router.get("/forgot-password", response_class=HTMLResponse)
+async def forgot_password_page(request: Request, sent: str | None = None) -> HTMLResponse:
+    return templates.TemplateResponse(request, "forgot_password.html", {"sent": sent})
+
+
+@router.post("/forgot-password")
+async def forgot_password_submit(request: Request, email: str = Form(...)) -> RedirectResponse:
+    redirect_to = f"{str(request.base_url).rstrip('/')}/dashboard/reset-password"
+    await request_password_reset(email, redirect_to)
+    # Always the same redirect regardless of whether the email exists — the
+    # provider call above already avoids leaking that, no reason to leak it
+    # here either.
+    return RedirectResponse("/dashboard/forgot-password?sent=1", status_code=303)
+
+
+@router.get("/reset-password", response_class=HTMLResponse)
+async def reset_password_page(request: Request) -> HTMLResponse:
+    # The recovery link's access_token arrives in the URL fragment (never
+    # sent to any server per the URL spec), so the password update itself
+    # happens client-side via JS calling Supabase directly — this route just
+    # needs to hand the page the public anon key, which is meant to be
+    # client-visible (same key already embedded in every other auth request
+    # this app makes).
+    return templates.TemplateResponse(
+        request,
+        "reset_password.html",
+        {
+            "supabase_url": get_settings().supabase_url,
+            "supabase_anon_key": get_settings().supabase_anon_key,
+        },
     )
 
 

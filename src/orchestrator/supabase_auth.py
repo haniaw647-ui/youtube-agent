@@ -39,6 +39,21 @@ async def login(email: str, password: str) -> dict:
     return resp.json()
 
 
+async def request_password_reset(email: str, redirect_to: str) -> None:
+    """Supabase's own /auth/v1/recover deliberately returns 200 for both
+    existing and non-existent emails (prevents account enumeration by a
+    login form), and this never raises on a non-2xx either — callers should
+    always show the same generic "check your email" message regardless of
+    what actually happened here."""
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            f"{settings.supabase_url}/auth/v1/recover",
+            headers={"apikey": settings.supabase_anon_key},
+            params={"redirect_to": redirect_to},
+            json={"email": email},
+        )
+
+
 async def get_user_from_token(access_token: str) -> dict:
     """Delegates token verification to Supabase Auth itself over HTTPS — the app
     never needs the project's JWT signing secret."""
