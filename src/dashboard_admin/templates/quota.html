@@ -6,7 +6,7 @@
 <div class="card">
   <h3>Today's usage</h3>
   <p style="font-size: 1.4rem;">{{ used }} / {{ total }} units ({{ pct }}%)</p>
-  <div style="background: var(--accent-light); border-radius: 4px; height: 14px;">
+  <div style="background: var(--accent-soft); border-radius: 4px; height: 14px;">
     <div style="background: {% if over_threshold %}var(--error){% else %}var(--accent){% endif %}; height: 100%; border-radius: 4px; width: {{ pct if pct <= 100 else 100 }}%;"></div>
   </div>
   {% if over_threshold %}

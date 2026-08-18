@@ -14,7 +14,7 @@
   <p>{{ r.channel_name }} &nbsp;·&nbsp; uploaded {{ r.uploaded_at.strftime('%Y-%m-%d') }} &nbsp;·&nbsp; <a href="{{ r.url }}" target="_blank" rel="noopener">watch ↗</a></p>
 
   {% if r.latest %}
-  <div style="background: var(--accent-light); border-radius: 4px; height: 10px; margin: 0.5rem 0 0.75rem;">
+  <div style="background: var(--accent-soft); border-radius: 4px; height: 10px; margin: 0.5rem 0 0.75rem;">
     <div style="background: var(--accent); height: 100%; border-radius: 4px; width: {{ (r.latest.views / max_views * 100) | round(1) }}%;"></div>
   </div>
   {% endif %}

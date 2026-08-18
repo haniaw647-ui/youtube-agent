@@ -6,56 +6,180 @@
   <title>{% block title %}Ops{% endblock %}</title>
   <style>
     :root {
-      --bg: #f5f0e4;
-      --bg-card: #fffdf7;
-      --text: #2b2a22;
-      --text-muted: #746f5c;
-      --accent: #6b4530;
-      --accent-dark: #4f3222;
-      --accent-light: #ecdfd2;
-      --border: #ded5bd;
-      --error: #a34430;
-      --success: #4f6b3a;
-      --warn: #b5872a;
+      --bg: #f4f5fb;
+      --bg-card: #ffffff;
+      --sidebar-bg: #ffffff;
+      --text: #1a1d2e;
+      --text-muted: #7a7f9a;
+      --accent: #4338ca;
+      --accent-2: #0ea5e9;
+      --accent-soft: #e0e7ff;
+      --border: #e5e7f5;
+      --error: #dc2626;
+      --success: #16a34a;
+      --warn: #d97706;
+      --shadow: 0 1px 3px rgba(67, 56, 202, 0.08);
+    }
+    :root[data-theme="dark"] {
+      --bg: #10111c;
+      --bg-card: #191b2b;
+      --sidebar-bg: #14151f;
+      --text: #eef0fb;
+      --text-muted: #9498b8;
+      --accent: #818cf8;
+      --accent-2: #38bdf8;
+      --accent-soft: #262a45;
+      --border: #2a2d45;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
     }
     * { box-sizing: border-box; }
     body {
       font-family: -apple-system, "Segoe UI", sans-serif;
       background: var(--bg);
       color: var(--text);
-      max-width: 1000px;
-      margin: 0 auto;
-      padding: 0 1.5rem 3rem;
+      margin: 0;
       line-height: 1.5;
     }
-    h1, h2, h3 { font-family: Georgia, "Times New Roman", serif; font-weight: normal; color: var(--text); }
-    h2 { font-size: 1.6rem; margin: 1.5rem 0 1rem; }
-    a { color: var(--accent-dark); }
-    nav {
-      display: flex; justify-content: space-between; align-items: center;
-      margin: 0 -1.5rem 2rem; padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border);
-      background: var(--accent-light);
+    a { color: var(--accent); text-decoration: none; }
+    h1, h2, h3 { font-weight: 600; color: var(--text); margin: 0 0 0.75rem; }
+    h2 { font-size: 1.5rem; }
+    h3 { font-size: 1.05rem; }
+
+    .shell { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: 230px;
+      flex-shrink: 0;
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--border);
+      padding: 1.5rem 1rem;
+      display: flex;
+      flex-direction: column;
     }
-    nav > div:first-child { font-family: Georgia, serif; font-size: 1.1rem; }
-    nav a { color: var(--text); text-decoration: none; margin-left: 1.25rem; font-size: 0.9rem; }
-    nav a:hover { color: var(--accent-dark); }
-    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem 1.5rem; margin-bottom: 1.25rem; box-shadow: 0 1px 3px rgba(43,42,34,0.06); }
+    .brand {
+      font-weight: 700;
+      font-size: 1rem;
+      padding: 0 0.75rem 0.25rem;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .brand-sub {
+      padding: 0 0.75rem 1.25rem;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .sidebar nav { display: flex; flex-direction: column; gap: 0.25rem; }
+    .sidebar nav a {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.6rem 0.75rem;
+      border-radius: 10px;
+      color: var(--text-muted);
+      font-size: 0.92rem;
+      font-weight: 500;
+    }
+    .sidebar nav a:hover { background: var(--accent-soft); color: var(--text); }
+    .sidebar nav a.active {
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      color: #fff;
+    }
+    .sidebar .spacer { flex: 1; }
+    .theme-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.6rem 0.75rem;
+      border-radius: 10px;
+      background: var(--accent-soft);
+      color: var(--text);
+      border: none;
+      cursor: pointer;
+      font-size: 0.85rem;
+      width: 100%;
+    }
+
+    .main { flex: 1; min-width: 0; padding: 2rem 2.5rem; }
+
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.25rem;
+      box-shadow: var(--shadow);
+    }
+    .stat-card .stat-icon {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: var(--accent-soft);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem; margin-bottom: 0.75rem;
+    }
+    .stat-card .stat-value { font-size: 1.6rem; font-weight: 700; }
+    .stat-card .stat-label { color: var(--text-muted); font-size: 0.85rem; margin-top: 0.15rem; }
+
+    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 1.25rem 1.5rem; margin-bottom: 1.25rem; box-shadow: var(--shadow); }
     .error { color: var(--error); }
     .warn { color: var(--warn); }
     .success { color: var(--success); }
     table { border-collapse: collapse; width: 100%; margin: 1rem 0; background: var(--bg-card); }
-    th, td { text-align: left; padding: 0.55rem 0.75rem; border-bottom: 1px solid var(--border); }
-    th { color: var(--text-muted); font-weight: 600; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.03em; }
-    button { padding: 0.5rem 1.1rem; cursor: pointer; background: var(--accent); color: #fff; border: none; border-radius: 6px; font-size: 0.95rem; }
-    button:hover { background: var(--accent-dark); }
-    input { padding: 0.5rem 0.6rem; margin-bottom: 0.6rem; width: 100%; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--text); font-size: 0.95rem; }
+    th, td { text-align: left; padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border); }
+    th { color: var(--text-muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    button { padding: 0.55rem 1.2rem; cursor: pointer; background: linear-gradient(90deg, var(--accent), var(--accent-2)); color: #fff; border: none; border-radius: 10px; font-size: 0.92rem; font-weight: 500; }
+    button:hover { opacity: 0.92; }
+    input { padding: 0.55rem 0.7rem; margin-bottom: 0.6rem; width: 100%; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); font-size: 0.92rem; }
+
+    @media (max-width: 800px) {
+      .shell { flex-direction: column; }
+      .sidebar { width: 100%; flex-direction: row; overflow-x: auto; align-items: center; }
+      .sidebar nav { flex-direction: row; }
+      .sidebar .spacer, .brand-sub { display: none; }
+      .brand { padding: 0 1rem 0 0; }
+    }
   </style>
 </head>
 <body>
-  <nav>
-    <div>Internal Ops — not tenant-visible</div>
-    <div><a href="/admin/jobs">Jobs</a><a href="/admin/failures">Failures</a><a href="/admin/quota">Quota</a><a href="/admin/tenants">Tenants</a><a href="/admin/abuse">Abuse</a><a href="/admin/logout">Log out</a></div>
-  </nav>
-  {% block content %}{% endblock %}
+  <div class="shell">
+    <div class="sidebar">
+      <div class="brand">◆ AutoTube</div>
+      <div class="brand-sub">Internal Ops</div>
+      <nav>
+        <a href="/admin/overview" {% if active_nav == 'overview' %}class="active"{% endif %}>🏠 Overview</a>
+        <a href="/admin/jobs" {% if active_nav == 'jobs' %}class="active"{% endif %}>🎬 Jobs</a>
+        <a href="/admin/failures" {% if active_nav == 'failures' %}class="active"{% endif %}>⚠️ Failures</a>
+        <a href="/admin/quota" {% if active_nav == 'quota' %}class="active"{% endif %}>📊 Quota</a>
+        <a href="/admin/tenants" {% if active_nav == 'tenants' %}class="active"{% endif %}>👥 Tenants</a>
+        <a href="/admin/abuse" {% if active_nav == 'abuse' %}class="active"{% endif %}>🚩 Abuse</a>
+        <a href="/admin/logout">🚪 Log out</a>
+      </nav>
+      <div class="spacer"></div>
+      <button class="theme-toggle" onclick="toggleTheme()"><span id="theme-icon">🌙</span> <span id="theme-label">Dark mode</span></button>
+    </div>
+    <div class="main">
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+  <script>
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      document.getElementById('theme-icon').textContent = theme === 'dark' ? '☀️' : '🌙';
+      document.getElementById('theme-label').textContent = theme === 'dark' ? 'Light mode' : 'Dark mode';
+    }
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+      const next = current === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('admin-theme', next);
+      applyTheme(next);
+    }
+    (function () {
+      const saved = localStorage.getItem('admin-theme');
+      const theme = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      applyTheme(theme);
+    })();
+  </script>
 </body>
 </html>

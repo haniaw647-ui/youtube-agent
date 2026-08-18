@@ -1,6 +1,6 @@
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
@@ -40,7 +40,7 @@ async def login_submit(email: str = Form(...), password: str = Form(...)) -> Red
     user_id = result["user"]["id"]
     await ensure_tenant(uuid.UUID(user_id), result["user"].get("email", ""))
 
-    response = RedirectResponse("/dashboard/approvals", status_code=303)
+    response = RedirectResponse("/dashboard/overview", status_code=303)
     response.set_cookie(
         SESSION_COOKIE, result["access_token"], httponly=True, samesite="lax", max_age=3600
     )
@@ -74,7 +74,7 @@ async def signup_submit(
     if "access_token" in result:
         user_id = result["user"]["id"]
         await ensure_tenant(uuid.UUID(user_id), display_name)
-        response = RedirectResponse("/dashboard/channels", status_code=303)
+        response = RedirectResponse("/dashboard/overview", status_code=303)
         response.set_cookie(
             SESSION_COOKIE, result["access_token"], httponly=True, samesite="lax", max_age=3600
         )
@@ -90,6 +90,83 @@ async def logout() -> RedirectResponse:
     response = RedirectResponse("/dashboard/login", status_code=303)
     response.delete_cookie(SESSION_COOKIE)
     return response
+
+
+@router.get("/overview", response_class=HTMLResponse)
+async def overview(request: Request, tenant_id=Depends(require_tenant)) -> HTMLResponse:
+    async with tenant_session(tenant_id) as session:
+        channel_count = (
+            await session.execute(text("SELECT count(*) FROM channels"))
+        ).scalar_one()
+        jobs_running = (
+            await session.execute(
+                text("SELECT count(*) FROM jobs WHERE overall_status = 'running'")
+            )
+        ).scalar_one()
+        jobs_done_this_month = (
+            await session.execute(
+                text(
+                    "SELECT count(*) FROM jobs WHERE overall_status = 'done' "
+                    "AND created_at >= date_trunc('month', now())"
+                )
+            )
+        ).scalar_one()
+        pending_approvals = (
+            await session.execute(
+                text("SELECT count(*) FROM job_stages WHERE status = 'awaiting_approval'")
+            )
+        ).scalar_one()
+        recent_jobs = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT j.id, j.current_stage, j.overall_status, j.title, "
+                        "c.name AS channel_name, j.created_at "
+                        "FROM jobs j JOIN channels c ON c.id = j.channel_id "
+                        "ORDER BY j.created_at DESC LIMIT 6"
+                    )
+                )
+            )
+            .mappings()
+            .all()
+        )
+        # Last 7 days of job creation, for the activity strip.
+        daily_counts = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT date_trunc('day', created_at) AS day, count(*) AS n "
+                        "FROM jobs WHERE created_at >= now() - interval '7 days' "
+                        "GROUP BY 1 ORDER BY 1"
+                    )
+                )
+            )
+            .mappings()
+            .all()
+        )
+
+    counts_by_day = {row["day"].date(): row["n"] for row in daily_counts}
+    today = datetime.now().date()
+    activity = []
+    for offset in range(6, -1, -1):
+        day = today - timedelta(days=offset)
+        activity.append({"date": day, "count": counts_by_day.get(day, 0)})
+    max_activity = max((d["count"] for d in activity), default=0) or 1
+
+    return templates.TemplateResponse(
+        request,
+        "overview.html",
+        {
+            "active_nav": "overview",
+            "channel_count": channel_count,
+            "jobs_running": jobs_running,
+            "jobs_done_this_month": jobs_done_this_month,
+            "pending_approvals": pending_approvals,
+            "recent_jobs": recent_jobs,
+            "activity": activity,
+            "max_activity": max_activity,
+        },
+    )
 
 
 @router.get("/channels", response_class=HTMLResponse)
@@ -118,6 +195,7 @@ async def channels_list(
         request,
         "channels.html",
         {
+            "active_nav": "channels",
             "channels": channels,
             "error": error,
             "connected": connected,
@@ -261,7 +339,12 @@ async def jobs_list(
     return templates.TemplateResponse(
         request,
         "jobs.html",
-        {"jobs": jobs, "channels": channels, "selected_channel_id": channel_id},
+        {
+            "active_nav": "jobs",
+            "jobs": jobs,
+            "channels": channels,
+            "selected_channel_id": channel_id,
+        },
     )
 
 
@@ -286,7 +369,10 @@ async def job_detail(
         )
         if job is None:
             return templates.TemplateResponse(
-                request, "job_detail.html", {"job": None, "stages": []}, status_code=404
+                request,
+                "job_detail.html",
+                {"active_nav": "jobs", "job": None, "stages": []},
+                status_code=404,
             )
         stage_rows = (
             (
@@ -311,7 +397,9 @@ async def job_detail(
                              "finished_at": None, "error": None})
         for name in PIPELINE_STAGES
     ]
-    return templates.TemplateResponse(request, "job_detail.html", {"job": job, "stages": stages})
+    return templates.TemplateResponse(
+        request, "job_detail.html", {"active_nav": "jobs", "job": job, "stages": stages}
+    )
 
 
 @router.get("/analytics", response_class=HTMLResponse)
@@ -359,7 +447,9 @@ async def analytics_list(request: Request, tenant_id=Depends(require_tenant)) ->
             rows.append({**v, "by_day": by_day, "latest": latest})
 
     return templates.TemplateResponse(
-        request, "analytics.html", {"rows": rows, "max_views": max_views or 1}
+        request,
+        "analytics.html",
+        {"active_nav": "analytics", "rows": rows, "max_views": max_views or 1},
     )
 
 
@@ -477,7 +567,9 @@ async def approvals_list(request: Request, tenant_id=Depends(require_tenant)) ->
                 detail["video_storage_path"] = video_asset["storage_path"] if video_asset else None
             items.append({**p, "detail": detail})
 
-    return templates.TemplateResponse(request, "approvals.html", {"items": items})
+    return templates.TemplateResponse(
+        request, "approvals.html", {"active_nav": "approvals", "items": items}
+    )
 
 
 @router.post("/approvals/{job_id}/{stage}")
@@ -544,7 +636,9 @@ async def api_keys_list(
     }
     providers = sorted(SUPPORTED_PROVIDERS)
     return templates.TemplateResponse(
-        request, "api_keys.html", {"providers": providers, "keys": keys, "saved": saved}
+        request,
+        "api_keys.html",
+        {"active_nav": "api-keys", "providers": providers, "keys": keys, "saved": saved},
     )
 
 
@@ -568,5 +662,3 @@ async def api_keys_submit(
             {"tenant_id": tenant_id, "provider": provider, "encrypted_key": encrypted},
         )
     return RedirectResponse(f"/dashboard/api-keys?saved={provider}", status_code=303)
-
-    return RedirectResponse("/dashboard/approvals", status_code=303)

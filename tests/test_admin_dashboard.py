@@ -6,6 +6,7 @@ against production Postgres and cleans up afterward.
 """
 
 import asyncio
+import json
 import uuid
 
 import pytest
@@ -52,6 +53,22 @@ def setup_module(_module: object) -> None:
                 ),
                 {"t": TENANT, "c": CHANNEL_ID},
             )
+            # A real flagged script_qa row — this is what /admin/abuse and the
+            # overview's abuse_flags count actually query against. Regression
+            # coverage for a real bug: output_ref is a JSON column, and
+            # jsonb_array_length() rejects json without an explicit ::jsonb
+            # cast — this 500'd in production the moment real data existed,
+            # uncaught because no earlier test ever exercised this query.
+            await session.execute(
+                text(
+                    "INSERT INTO job_stages (job_id, tenant_id, stage, status, output_ref) "
+                    "VALUES ('job_admin_test_001', :t, 'script_qa', 'done', :output_ref)"
+                ),
+                {
+                    "t": TENANT,
+                    "output_ref": json.dumps({"verdict": "escalate", "flags": ["violence"]}),
+                },
+            )
             await session.commit()
 
     asyncio.run(_seed())
@@ -60,6 +77,9 @@ def setup_module(_module: object) -> None:
 def teardown_module(_module: object) -> None:
     async def _cleanup() -> None:
         async with service_session() as session:
+            await session.execute(
+                text("DELETE FROM job_stages WHERE tenant_id = :t"), {"t": TENANT}
+            )
             await session.execute(text("DELETE FROM jobs WHERE tenant_id = :t"), {"t": TENANT})
             await session.execute(
                 text("DELETE FROM channels WHERE tenant_id = :t"), {"t": TENANT}
@@ -97,13 +117,27 @@ def test_wrong_password_does_not_grant_access():
 def test_correct_password_grants_access_and_sees_cross_tenant_data():
     resp = client.post("/admin/login", data={"password": ADMIN_PASSWORD})
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/admin/jobs"
+    assert resp.headers["location"] == "/admin/overview"
 
     resp = client.get("/admin/jobs")
     assert resp.status_code == 200
     assert "job_admin_test_001" in resp.text
     assert "Admin Dashboard Test Tenant" in resp.text
     assert "Admin Test Channel" in resp.text
+
+
+def test_overview_page_renders_with_real_stats():
+    resp = client.get("/admin/overview")
+    assert resp.status_code == 200
+    assert "Tenants" in resp.text
+    assert "job_admin_test_001" in resp.text  # shows up in the recent-activity table
+
+
+def test_abuse_page_renders_the_real_flagged_row():
+    resp = client.get("/admin/abuse")
+    assert resp.status_code == 200
+    assert "job_admin_test_001" in resp.text
+    assert "violence" in resp.text
 
 
 def test_tenants_page_shows_key_status_only_never_raw_keys():

@@ -1,0 +1,55 @@
+{% extends "base_admin.html" %}
+{% block title %}Overview{% endblock %}
+{% block content %}
+<h2>Platform overview</h2>
+<p style="color: var(--text-muted); margin-top: -0.5rem;">Cross-tenant health, at a glance.</p>
+
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="stat-icon">👥</div>
+    <div class="stat-value">{{ tenant_count }}</div>
+    <div class="stat-label">Tenants</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon">🎬</div>
+    <div class="stat-value">{{ jobs_today }}</div>
+    <div class="stat-label">Jobs started today</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon">⚠️</div>
+    <div class="stat-value" style="{% if failures_today > 0 %}color: var(--error);{% endif %}">{{ failures_today }}</div>
+    <div class="stat-label">Failures today</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon">📊</div>
+    <div class="stat-value" style="{% if quota_pct >= 80 %}color: var(--error);{% endif %}">{{ quota_pct }}%</div>
+    <div class="stat-label">YouTube quota used</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon">🚩</div>
+    <div class="stat-value" style="{% if abuse_flags > 0 %}color: var(--warn);{% endif %}">{{ abuse_flags }}</div>
+    <div class="stat-label">Content flags (all time)</div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Recent activity</h3>
+  {% if not recent_jobs %}
+    <p>No jobs on the platform yet.</p>
+  {% else %}
+  <table>
+    <tr><th>Job</th><th>Tenant</th><th>Channel</th><th>Stage</th><th>Status</th></tr>
+    {% for j in recent_jobs %}
+    <tr>
+      <td>{{ j.id }}</td>
+      <td>{{ j.tenant_name }}</td>
+      <td>{{ j.channel_name }}</td>
+      <td>{{ j.current_stage }}</td>
+      <td class="{% if j.overall_status == 'failed' %}error{% elif j.overall_status == 'awaiting_approval' %}warn{% elif j.overall_status == 'done' %}success{% endif %}">{{ j.overall_status }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  <p style="margin-top: 0.75rem;"><a href="/admin/jobs">View all jobs →</a></p>
+</div>
+{% endblock %}

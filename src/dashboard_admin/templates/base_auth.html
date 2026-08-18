@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Ops{% endblock %}</title>
+  <style>
+    :root {
+      --bg: #f4f5fb;
+      --bg-card: #ffffff;
+      --text: #1a1d2e;
+      --text-muted: #7a7f9a;
+      --accent: #4338ca;
+      --accent-2: #0ea5e9;
+      --accent-soft: #e0e7ff;
+      --border: #e5e7f5;
+      --error: #dc2626;
+      --shadow: 0 8px 30px rgba(67, 56, 202, 0.15);
+    }
+    :root[data-theme="dark"] {
+      --bg: #10111c;
+      --bg-card: #191b2b;
+      --text: #eef0fb;
+      --text-muted: #9498b8;
+      --accent: #818cf8;
+      --accent-2: #38bdf8;
+      --accent-soft: #262a45;
+      --border: #2a2d45;
+      --shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top left, var(--accent-soft), var(--bg) 60%);
+      color: var(--text);
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1.5;
+    }
+    .brand {
+      position: fixed;
+      top: 1.75rem;
+      left: 2rem;
+      font-weight: 700;
+      font-size: 1rem;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .brand-sub { position: fixed; top: 3.1rem; left: 2rem; font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 2rem 2.25rem; box-shadow: var(--shadow); width: 100%; max-width: 380px; }
+    h2 { margin: 0 0 1.25rem; font-weight: 600; }
+    .error { color: var(--error); }
+    button { padding: 0.6rem 1.2rem; cursor: pointer; background: linear-gradient(90deg, var(--accent), var(--accent-2)); color: #fff; border: none; border-radius: 10px; font-size: 0.95rem; font-weight: 500; width: 100%; }
+    button:hover { opacity: 0.92; }
+    input { padding: 0.6rem 0.75rem; margin-bottom: 0.75rem; width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); font-size: 0.92rem; }
+  </style>
+</head>
+<body>
+  <div class="brand">◆ AutoTube</div>
+  <div class="brand-sub">Internal Ops</div>
+  {% block content %}{% endblock %}
+  <script>
+    (function () {
+      const saved = localStorage.getItem('admin-theme');
+      const theme = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
+</body>
+</html>

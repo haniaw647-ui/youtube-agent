@@ -30,7 +30,7 @@ async def login_submit(password: str = Form(...)) -> RedirectResponse:
     if not check_password(password):
         return RedirectResponse("/admin/login?error=Incorrect+password", status_code=303)
 
-    response = RedirectResponse("/admin/jobs", status_code=303)
+    response = RedirectResponse("/admin/overview", status_code=303)
     response.set_cookie(
         SESSION_COOKIE,
         make_session_cookie(),
@@ -46,6 +46,69 @@ async def logout() -> RedirectResponse:
     response = RedirectResponse("/admin/login", status_code=303)
     response.delete_cookie(SESSION_COOKIE)
     return response
+
+
+@router.get("/overview", response_class=HTMLResponse, dependencies=[Depends(require_admin)])
+async def overview(request: Request) -> HTMLResponse:
+    async with service_session() as session:
+        tenant_count = (await session.execute(text("SELECT count(*) FROM tenants"))).scalar_one()
+        jobs_today = (
+            await session.execute(
+                text(
+                    "SELECT count(*) FROM jobs WHERE created_at >= date_trunc('day', now())"
+                )
+            )
+        ).scalar_one()
+        failures_today = (
+            await session.execute(
+                text(
+                    "SELECT count(*) FROM jobs WHERE overall_status = 'failed' "
+                    "AND updated_at >= date_trunc('day', now())"
+                )
+            )
+        ).scalar_one()
+        abuse_flags = (
+            await session.execute(
+                text(
+                    "SELECT count(*) FROM job_stages "
+                    "WHERE stage = 'script_qa' "
+                    "AND jsonb_array_length((output_ref->'flags')::jsonb) > 0"
+                )
+            )
+        ).scalar_one()
+        recent_jobs = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT j.id, j.current_stage, j.overall_status, "
+                        "c.name AS channel_name, t.display_name AS tenant_name, j.created_at "
+                        "FROM jobs j "
+                        "JOIN channels c ON c.id = j.channel_id "
+                        "JOIN tenants t ON t.id = j.tenant_id "
+                        "ORDER BY j.created_at DESC LIMIT 6"
+                    )
+                )
+            )
+            .mappings()
+            .all()
+        )
+
+    used = await get_todays_quota_usage()
+    quota_pct = round(used / DEFAULT_DAILY_QUOTA * 100, 1)
+
+    return templates.TemplateResponse(
+        request,
+        "overview.html",
+        {
+            "active_nav": "overview",
+            "tenant_count": tenant_count,
+            "jobs_today": jobs_today,
+            "failures_today": failures_today,
+            "abuse_flags": abuse_flags,
+            "quota_pct": quota_pct,
+            "recent_jobs": recent_jobs,
+        },
+    )
 
 
 @router.get("/jobs", response_class=HTMLResponse, dependencies=[Depends(require_admin)])
@@ -67,7 +130,9 @@ async def jobs_list(request: Request) -> HTMLResponse:
             .mappings()
             .all()
         )
-    return templates.TemplateResponse(request, "jobs.html", {"jobs": jobs})
+    return templates.TemplateResponse(
+        request, "jobs.html", {"active_nav": "jobs", "jobs": jobs}
+    )
 
 
 @router.get("/failures", response_class=HTMLResponse, dependencies=[Depends(require_admin)])
@@ -95,7 +160,9 @@ async def failures_list(request: Request) -> HTMLResponse:
             .mappings()
             .all()
         )
-    return templates.TemplateResponse(request, "failures.html", {"failures": failures})
+    return templates.TemplateResponse(
+        request, "failures.html", {"active_nav": "failures", "failures": failures}
+    )
 
 
 @router.get("/quota", response_class=HTMLResponse, dependencies=[Depends(require_admin)])
@@ -107,6 +174,7 @@ async def quota_page(request: Request) -> HTMLResponse:
         request,
         "quota.html",
         {
+            "active_nav": "quota",
             "used": used,
             "total": DEFAULT_DAILY_QUOTA,
             "pct": pct,
@@ -149,7 +217,9 @@ async def tenants_list(request: Request) -> HTMLResponse:
         keys_by_tenant.setdefault(k["tenant_id"], []).append(k)
 
     rows = [{**t, "provider_keys": keys_by_tenant.get(t["id"], [])} for t in tenants]
-    return templates.TemplateResponse(request, "tenants.html", {"tenants": rows})
+    return templates.TemplateResponse(
+        request, "tenants.html", {"active_nav": "tenants", "tenants": rows}
+    )
 
 
 @router.get("/abuse", response_class=HTMLResponse, dependencies=[Depends(require_admin)])
@@ -166,7 +236,7 @@ async def abuse_list(request: Request) -> HTMLResponse:
                         "JOIN channels c ON c.id = j.channel_id "
                         "JOIN tenants t ON t.id = j.tenant_id "
                         "WHERE js.stage = 'script_qa' "
-                        "AND jsonb_array_length(js.output_ref->'flags') > 0 "
+                        "AND jsonb_array_length((js.output_ref->'flags')::jsonb) > 0 "
                         "ORDER BY js.started_at DESC LIMIT 100"
                     )
                 )
@@ -175,4 +245,6 @@ async def abuse_list(request: Request) -> HTMLResponse:
             .all()
         )
     flagged = [{**r, "flags": r["output_ref"].get("flags", [])} for r in rows]
-    return templates.TemplateResponse(request, "abuse.html", {"flagged": flagged})
+    return templates.TemplateResponse(
+        request, "abuse.html", {"active_nav": "abuse", "flagged": flagged}
+    )
