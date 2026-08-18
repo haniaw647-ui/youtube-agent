@@ -93,7 +93,13 @@ async def forgot_password_page(request: Request, sent: str | None = None) -> HTM
 
 @router.post("/forgot-password")
 async def forgot_password_submit(request: Request, email: str = Form(...)) -> RedirectResponse:
-    redirect_to = f"{str(request.base_url).rstrip('/')}/dashboard/reset-password"
+    # request.base_url can resolve to Railway's internal proxy address rather
+    # than the public domain, which silently produced a redirect_to that
+    # wasn't on Supabase's allow list — PUBLIC_BASE_URL sidesteps that
+    # entirely. Falls back to request.base_url only for local dev, where
+    # there's no reverse proxy in the way.
+    base = get_settings().public_base_url or str(request.base_url).rstrip("/")
+    redirect_to = f"{base.rstrip('/')}/dashboard/reset-password"
     await request_password_reset(email, redirect_to)
     # Always the same redirect regardless of whether the email exists — the
     # provider call above already avoids leaking that, no reason to leak it

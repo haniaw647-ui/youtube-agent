@@ -14,6 +14,13 @@ class Settings(BaseSettings):
     supabase_anon_key: str = ""
     supabase_service_role_key: str = ""
 
+    # The app sits behind Railway's reverse proxy, so request.base_url can
+    # resolve to the proxy's internal address rather than the public HTTPS
+    # domain — exactly the kind of thing that silently breaks any URL we
+    # build from it (e.g. the password-reset redirect_to). Explicit and
+    # unambiguous, same reasoning as YOUTUBE_OAUTH_REDIRECT_URI below.
+    public_base_url: str = ""
+
     redis_url: str = "redis://localhost:6379/0"
 
     secret_key: str = "dev-only-not-secure"
