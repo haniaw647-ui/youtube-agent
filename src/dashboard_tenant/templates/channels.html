@@ -5,6 +5,7 @@
 {% if connected %}<p class="success">YouTube channel connected successfully.</p>{% endif %}
 {% if error %}<p class="error">Connection failed ({{ error }}). Please try again.</p>{% endif %}
 {% if job_error %}<p class="error">{{ job_error }}</p>{% endif %}
+{% if deleted %}<p class="success">Channel deleted.</p>{% endif %}
 
 <div class="card">
   <h3>New channel</h3>
@@ -74,6 +75,13 @@
     <button type="submit">Start new video job</button>
   </form>
   <a href="/dashboard/jobs?channel_id={{ c.id }}">View jobs for this channel</a>
+
+  <form method="post" action="/dashboard/channels/{{ c.id }}/delete" style="margin-top: 1rem;"
+        onsubmit="return confirm('Delete {{ c.name }}? This permanently removes the channel and all of its jobs, videos, and history. This cannot be undone.');">
+    <button type="submit" style="background: var(--danger, #c0392b); border-color: var(--danger, #c0392b);">
+      Delete channel
+    </button>
+  </form>
 </div>
 {% endfor %}
 {% endblock %}

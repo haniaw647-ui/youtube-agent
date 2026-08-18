@@ -13,7 +13,7 @@ from src.dashboard_tenant.auth import SESSION_COOKIE, require_tenant
 from src.models.pipeline import PIPELINE_STAGES
 from src.orchestrator.db import tenant_session
 from src.orchestrator.guardrails import TenantLimitExceeded, check_tenant_job_limits
-from src.orchestrator.routes.channels import DEFAULT_APPROVAL_GATES
+from src.orchestrator.routes.channels import DEFAULT_APPROVAL_GATES, _delete_channel_cascade
 from src.orchestrator.routes.tenant_keys import SUPPORTED_PROVIDERS
 from src.orchestrator.security import decrypt, encrypt, mask
 from src.orchestrator.supabase_auth import SupabaseAuthError, login, signup
@@ -176,6 +176,7 @@ async def channels_list(
     error: str | None = None,
     connected: str | None = None,
     job_error: str | None = None,
+    deleted: str | None = None,
 ) -> HTMLResponse:
     async with tenant_session(tenant_id) as session:
         channels = (
@@ -200,6 +201,7 @@ async def channels_list(
             "error": error,
             "connected": connected,
             "job_error": job_error,
+            "deleted": deleted,
             "posting_frequencies": list(POSTING_FREQUENCIES.keys()),
         },
     )
@@ -258,6 +260,17 @@ async def update_channel_settings(
             },
         )
     return RedirectResponse("/dashboard/channels", status_code=303)
+
+
+@router.post("/channels/{channel_id}/delete")
+async def delete_channel_submit(
+    channel_id: uuid.UUID, tenant_id=Depends(require_tenant)
+) -> RedirectResponse:
+    async with tenant_session(tenant_id) as session:
+        found = await _delete_channel_cascade(session, channel_id)
+    if not found:
+        return RedirectResponse("/dashboard/channels?error=Channel+not+found", status_code=303)
+    return RedirectResponse("/dashboard/channels?deleted=1", status_code=303)
 
 
 @router.post("/channels/{channel_id}/whatsapp")

@@ -1,4 +1,5 @@
 import uuid
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
@@ -80,7 +81,14 @@ async def youtube_callback(
                     "id": channel_id,
                 },
             )
-    except YouTubeOAuthError:
-        return RedirectResponse("/dashboard/channels?error=oauth_failed", status_code=303)
+    except YouTubeOAuthError as e:
+        # The generic "oauth_failed" this used to send back left every real
+        # failure indistinguishable from the browser — surfacing the actual
+        # provider/validation message (also truncated, since Google's raw
+        # error bodies can be long) makes this diagnosable without needing
+        # server log access for every report.
+        return RedirectResponse(
+            f"/dashboard/channels?error={quote(str(e)[:200])}", status_code=303
+        )
 
     return RedirectResponse("/dashboard/channels?connected=1", status_code=303)
