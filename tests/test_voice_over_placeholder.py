@@ -1,21 +1,20 @@
-"""Real, unmocked apart from ffmpeg — proves voice_over falls back to a
-silent placeholder track (instead of hard-failing the whole job) when a
-tenant has no usable voice provider key, and that the placeholder is
-correctly stamped with a license_type final_qa's audit_licenses() already
-treats as unresolved (so it can never silently slip past to a real
-YouTube upload without a human noticing). Real trigger for this: both
-ElevenLabs' free tier and Azure/OpenAI need a paid plan for API access —
-a genuine external constraint a tenant can hit on day one.
-"""
+"""Proves voice_over's full fallback chain when a tenant has no paid voice
+provider key: real ElevenLabs/OpenAI provider -> free edge-tts (real,
+unmocked network call — genuinely free/keyless, fast enough to exercise for
+real rather than mock) -> silent placeholder only if edge-tts itself also
+fails. Confirms each tier is stamped with the license_type final_qa's
+audit_licenses() expects (only the true silent-placeholder tier is treated
+as unresolved)."""
 
 import asyncio
 import uuid
 from unittest.mock import AsyncMock, patch
 
+import edge_tts.exceptions
 from sqlalchemy import text
 
 from src.orchestrator.db import service_session
-from src.workers.stages.voice_over import PLACEHOLDER_LICENSE_TYPE, run
+from src.workers.stages.voice_over import FALLBACK_LICENSE_TYPE, PLACEHOLDER_LICENSE_TYPE, run
 
 TENANT = uuid.uuid4()
 
@@ -72,11 +71,43 @@ async def _seed_job_with_script(job_id: str) -> None:
         await session.commit()
 
 
-def test_falls_back_to_silent_placeholder_when_no_voice_key_connected() -> None:
+async def _asset_row(job_id: str) -> dict:
+    async with service_session() as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT provider, license_type FROM assets "
+                    "WHERE job_id = :jid AND type = 'voice'"
+                ),
+                {"jid": job_id},
+            )
+        ).mappings().one()
+        return dict(row)
+
+
+def test_falls_back_to_real_edge_tts_when_no_paid_voice_key_connected() -> None:
+    job_id = f"job_voice_edge_{uuid.uuid4().hex[:8]}"
+    asyncio.run(_seed_job_with_script(job_id))
+
+    result = asyncio.run(run(job_id, str(TENANT)))
+
+    assert result["provider"] == "edge-tts"
+    assert result["license_type"] == FALLBACK_LICENSE_TYPE
+    assert "unofficial" in result["attribution_text"]
+
+    asset = asyncio.run(_asset_row(job_id))
+    assert asset["provider"] == "edge-tts"
+    assert asset["license_type"] == FALLBACK_LICENSE_TYPE
+
+
+def test_falls_back_to_silent_placeholder_when_edge_tts_also_fails() -> None:
     job_id = f"job_voice_placeholder_{uuid.uuid4().hex[:8]}"
     asyncio.run(_seed_job_with_script(job_id))
 
     with patch(
+        "src.workers.stages.voice_over.EdgeTTSProvider.synthesize",
+        new=AsyncMock(side_effect=edge_tts.exceptions.NoAudioReceived("boom")),
+    ), patch(
         "src.workers.stages.voice_over.generate_silence", new=AsyncMock()
     ) as mock_silence:
 
@@ -92,18 +123,6 @@ def test_falls_back_to_silent_placeholder_when_no_voice_key_connected() -> None:
     mock_silence.assert_awaited_once()
     assert mock_silence.await_args.args[0] == 5  # est_duration_seconds from the script
 
-    async def _check_asset() -> None:
-        async with service_session() as session:
-            asset = (
-                await session.execute(
-                    text(
-                        "SELECT provider, license_type FROM assets "
-                        "WHERE job_id = :jid AND type = 'voice'"
-                    ),
-                    {"jid": job_id},
-                )
-            ).mappings().one()
-            assert asset["provider"] == "placeholder-silence"
-            assert asset["license_type"] == PLACEHOLDER_LICENSE_TYPE
-
-    asyncio.run(_check_asset())
+    asset = asyncio.run(_asset_row(job_id))
+    assert asset["provider"] == "placeholder-silence"
+    assert asset["license_type"] == PLACEHOLDER_LICENSE_TYPE

@@ -1,11 +1,13 @@
 import os
 import tempfile
 
+import edge_tts.exceptions
 from sqlalchemy import text
 
 from src.orchestrator.db import service_session
 from src.orchestrator.provider_keys import MissingProviderKeyError, get_tenant_key
 from src.orchestrator.storage import get_storage_provider
+from src.providers.voice.edge_tts_provider import EdgeTTSProvider
 from src.providers.voice.elevenlabs import ElevenLabsProvider
 from src.providers.voice.openai_tts import OpenAITTSProvider
 from src.workers.ffmpeg_utils import generate_silence
@@ -15,16 +17,27 @@ from src.workers.ffmpeg_utils import generate_silence
 # premium where it matters most" strategy — voice quality is one of those spots).
 DEFAULT_PROVIDER = "elevenlabs"
 
-# No voice provider connected is a real, expected state for a tenant still
-# testing the pipeline (both ElevenLabs' free tier and Azure/OpenAI need a
-# paid plan for API access — a genuine external constraint, not a bug here).
-# Same reasoning as background_music.py's placeholder tone: keep the pipeline
-# complete end-to-end rather than hard-failing, but make the gap impossible
-# to miss via the license_type final_qa's audit_licenses() already checks.
+# edge-tts needs no key/signup/billing at all (see EdgeTTSProvider), so it's
+# the fallback when a tenant hasn't connected a real paid provider — real
+# neural narration instead of dead silence. Its own failure (network hiccup,
+# Microsoft changing the unofficial endpoint) still falls through to the
+# silent placeholder below rather than hard-failing the whole job.
+FALLBACK_LICENSE_TYPE = "edge-tts-unofficial"
+FALLBACK_ATTRIBUTION = (
+    "Narration via edge-tts (Microsoft Edge's neural voices, accessed through an "
+    "unofficial free client — not a documented commercial API, so there's some ToS "
+    "ambiguity for a monetized upload). Connect a real ElevenLabs/OpenAI key to replace it."
+)
+
+# No voice provider connected AND edge-tts itself failing is the genuine
+# last-resort case (same reasoning as background_music.py's placeholder
+# tone): keep the pipeline complete end-to-end rather than hard-failing, but
+# make the gap impossible to miss via the license_type final_qa's
+# audit_licenses() already checks.
 PLACEHOLDER_LICENSE_TYPE = "platform-placeholder-not-for-production"
 PLACEHOLDER_ATTRIBUTION = (
-    "Silent placeholder narration — no voice provider connected. "
-    "Connect a real ElevenLabs/OpenAI key before publishing."
+    "Silent placeholder narration — no voice provider connected and the free "
+    "edge-tts fallback failed too. Connect a real ElevenLabs/OpenAI key before publishing."
 )
 
 
@@ -60,6 +73,7 @@ async def run(job_id: str, tenant_id: str) -> dict:
         )
 
     provider_name = (provider_config or {}).get("voice_provider", DEFAULT_PROVIDER)
+    attribution_text = None
 
     try:
         api_key = await get_tenant_key(tenant_id, provider_name)
@@ -71,14 +85,21 @@ async def run(job_id: str, tenant_id: str) -> dict:
         audio_bytes = await voice.synthesize(script["content"])
         license_type = None
     except MissingProviderKeyError:
-        provider_name = "placeholder-silence"
-        duration = script["est_duration_seconds"] or 30
-        with tempfile.TemporaryDirectory() as tmpdir:
-            audio_path = os.path.join(tmpdir, "silence.mp3")
-            await generate_silence(duration, audio_path)
-            with open(audio_path, "rb") as f:
-                audio_bytes = f.read()
-        license_type = PLACEHOLDER_LICENSE_TYPE
+        try:
+            audio_bytes = await EdgeTTSProvider().synthesize(script["content"])
+            provider_name = "edge-tts"
+            license_type = FALLBACK_LICENSE_TYPE
+            attribution_text = FALLBACK_ATTRIBUTION
+        except (edge_tts.exceptions.EdgeTTSException, OSError):
+            provider_name = "placeholder-silence"
+            duration = script["est_duration_seconds"] or 30
+            with tempfile.TemporaryDirectory() as tmpdir:
+                audio_path = os.path.join(tmpdir, "silence.mp3")
+                await generate_silence(duration, audio_path)
+                with open(audio_path, "rb") as f:
+                    audio_bytes = f.read()
+            license_type = PLACEHOLDER_LICENSE_TYPE
+            attribution_text = PLACEHOLDER_ATTRIBUTION
 
     storage = get_storage_provider()
     key = f"{tenant_id}/{job_row['channel_id']}/{job_id}/voice/narration.mp3"
@@ -104,5 +125,5 @@ async def run(job_id: str, tenant_id: str) -> dict:
     result = {"asset_type": "voice", "provider": provider_name, "storage_path": storage_path}
     if license_type:
         result["license_type"] = license_type
-        result["attribution_text"] = PLACEHOLDER_ATTRIBUTION
+        result["attribution_text"] = attribution_text
     return result
