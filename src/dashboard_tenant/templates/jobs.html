@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Jobs{% endblock %}
 {% block content %}
+{% if jobs | selectattr('overall_status', 'equalto', 'running') | list %}
+<meta http-equiv="refresh" content="5">
+{% endif %}
 <h2>Jobs</h2>
 
 <form method="get" action="/dashboard/jobs" style="max-width: 300px;">

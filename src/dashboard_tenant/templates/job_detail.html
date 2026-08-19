@@ -4,6 +4,9 @@
 {% if not job %}
   <p class="error">Job not found.</p>
 {% else %}
+{% if job.overall_status == 'running' %}
+<meta http-equiv="refresh" content="5">
+{% endif %}
 <h2>{{ job.id }}</h2>
 <p><strong>Channel:</strong> {{ job.channel_name }} &nbsp; <strong>Status:</strong> {{ job.overall_status }}</p>
 {% if job.title %}<p><strong>Title:</strong> {{ job.title }}</p>{% endif %}
