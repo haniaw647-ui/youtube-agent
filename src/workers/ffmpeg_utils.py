@@ -6,6 +6,14 @@ import tempfile
 FFMPEG_BIN = "ffmpeg"
 FFPROBE_BIN = "ffprobe"
 
+# libx264 auto-detects thread count from the host machine's core count, not
+# the container's cgroup CPU quota — on Railway that meant 34 encoder threads
+# fighting over a 2-vCPU limit, starving the process until it got OOM/signal
+# killed with no ffmpeg error message (just silence at frame=0). Every
+# re-encoding _run() call below caps -threads explicitly to match the actual
+# quota.
+ENCODE_THREADS = "2"
+
 
 class FfmpegError(Exception):
     pass
@@ -115,6 +123,8 @@ async def build_video_from_images_and_audio(
                     str(duration),
                     "-pix_fmt",
                     "yuv420p",
+                    "-threads",
+                    ENCODE_THREADS,
                     clip_path,
                 ]
             )
@@ -175,6 +185,8 @@ async def burn_subtitles(video_path: str, srt_path: str, output_path: str) -> No
             f"subtitles='{_escape_filter_path(srt_path)}'",
             "-c:a",
             "copy",
+            "-threads",
+            ENCODE_THREADS,
             output_path,
         ]
     )
