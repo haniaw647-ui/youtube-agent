@@ -14,6 +14,13 @@ FFPROBE_BIN = "ffprobe"
 # quota.
 ENCODE_THREADS = "2"
 
+# The default "medium" preset's multi-frame lookahead/mbtree analysis was
+# still enough to peg the 1GB container's memory near its ceiling and stall
+# re-encodes at ~0.01x realtime even with threads capped. "ultrafast" cuts
+# that buffering to the minimum — draft-quality output is fine here since
+# every render is a placeholder pending human final_qa review anyway.
+ENCODE_PRESET = "ultrafast"
+
 
 class FfmpegError(Exception):
     pass
@@ -125,6 +132,8 @@ async def build_video_from_images_and_audio(
                     "yuv420p",
                     "-threads",
                     ENCODE_THREADS,
+                    "-preset",
+                    ENCODE_PRESET,
                     clip_path,
                 ]
             )
@@ -187,6 +196,8 @@ async def burn_subtitles(video_path: str, srt_path: str, output_path: str) -> No
             "copy",
             "-threads",
             ENCODE_THREADS,
+            "-preset",
+            ENCODE_PRESET,
             output_path,
         ]
     )
