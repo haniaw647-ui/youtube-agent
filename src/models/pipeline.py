@@ -38,6 +38,10 @@ class Job(Base, TenantScopedMixin, TimestampMixin):
         ForeignKey("channels.id"), nullable=False, index=True
     )
     topic_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("topics.id"), nullable=True)
+    # A creator-supplied topic/theme request, entered when starting the job —
+    # topic_generation.py reads this back and generates candidates around it
+    # instead of the channel's generic niche, when set.
+    topic_brief: Mapped[str | None] = mapped_column(nullable=True)
     current_stage: Mapped[str] = mapped_column(nullable=False)
     overall_status: Mapped[str] = mapped_column(nullable=False, server_default="running")
     title: Mapped[str | None] = mapped_column(nullable=True)

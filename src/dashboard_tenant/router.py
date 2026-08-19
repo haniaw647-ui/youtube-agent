@@ -332,7 +332,7 @@ async def delete_channel_submit(
 
 @router.post("/channels/{channel_id}/jobs/create")
 async def create_job_submit(
-    channel_id: str, tenant_id=Depends(require_tenant)
+    channel_id: str, topic_brief: str = Form(""), tenant_id=Depends(require_tenant)
 ) -> RedirectResponse:
     try:
         await check_tenant_job_limits(tenant_id)
@@ -361,10 +361,17 @@ async def create_job_submit(
         first_stage = PIPELINE_STAGES[0]
         await session.execute(
             text(
-                "INSERT INTO jobs (id, tenant_id, channel_id, current_stage, overall_status) "
-                "VALUES (:id, :tenant_id, :channel_id, :stage, 'running')"
+                "INSERT INTO jobs "
+                "(id, tenant_id, channel_id, current_stage, overall_status, topic_brief) "
+                "VALUES (:id, :tenant_id, :channel_id, :stage, 'running', :topic_brief)"
             ),
-            {"id": job_id, "tenant_id": tenant_id, "channel_id": channel_id, "stage": first_stage},
+            {
+                "id": job_id,
+                "tenant_id": tenant_id,
+                "channel_id": channel_id,
+                "stage": first_stage,
+                "topic_brief": topic_brief.strip() or None,
+            },
         )
 
     enqueue_stage(job_id, str(tenant_id), first_stage)

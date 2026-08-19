@@ -43,11 +43,17 @@ async def run(job_id: str, tenant_id: str) -> dict:
     llm = AnthropicProvider(api_key=api_key)
 
     async with service_session() as session:
-        channel_id = (
-            await session.execute(
-                text("SELECT channel_id FROM jobs WHERE id = :id"), {"id": job_id}
+        job_row = (
+            (
+                await session.execute(
+                    text("SELECT channel_id, topic_brief FROM jobs WHERE id = :id"),
+                    {"id": job_id},
+                )
             )
-        ).scalar_one()
+            .mappings()
+            .one()
+        )
+        channel_id = job_row["channel_id"]
         channel = (
             (
                 await session.execute(
@@ -96,7 +102,19 @@ async def run(job_id: str, tenant_id: str) -> dict:
         f"{avoid}\n\n"
         f"Generate {NUM_CANDIDATES} new topic candidates."
     )
-    if human_rejection:
+    if job_row["topic_brief"]:
+        # The creator specified a topic/theme when starting this job — this
+        # overrides the generic niche-based brainstorm with a direct
+        # instruction. Takes priority over rejection feedback below since a
+        # topic_brief is a stronger, more specific signal than after-the-fact
+        # notes on an AI-generated batch the creator didn't ask for.
+        user_prompt += (
+            f"\n\nThe creator requested this specific topic/theme for this video — "
+            f"generate all {NUM_CANDIDATES} candidates centered on it, as different "
+            f"specific angles/takes on the same request, not unrelated ideas:\n"
+            f"{job_row['topic_brief']}\n"
+        )
+    elif human_rejection:
         # The creator rejected the last batch of candidates with specific
         # feedback on what to change — same reasoning as script_writing's
         # revision_feedback, just for the topic_scoring gate.

@@ -105,6 +105,44 @@ def test_create_job_from_channel_and_view_pipeline_progress() -> None:
     assert "not_started" in resp.text  # nothing has actually run (no worker in this test)
 
 
+def test_create_job_stores_the_creator_supplied_topic_brief() -> None:
+    async def _get_channel_id() -> str:
+        async with service_session() as session:
+            row = (
+                (
+                    await session.execute(
+                        text(
+                            "SELECT id FROM channels WHERE tenant_id = :t "
+                            "AND name = 'Dashboard Test Channel'"
+                        ),
+                        {"t": TENANT},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+        return str(row["id"])
+
+    channel_id = asyncio.run(_get_channel_id())
+
+    resp = client.post(
+        f"/dashboard/channels/{channel_id}/jobs/create",
+        data={"topic_brief": "  The history of the printing press  "},
+    )
+    assert resp.status_code == 303, resp.text
+    job_id = resp.headers["location"].rsplit("/", 1)[-1]
+
+    async def _read_topic_brief() -> str | None:
+        async with service_session() as session:
+            return (
+                await session.execute(
+                    text("SELECT topic_brief FROM jobs WHERE id = :id"), {"id": job_id}
+                )
+            ).scalar_one()
+
+    assert asyncio.run(_read_topic_brief()) == "The history of the printing press"
+
+
 def test_channel_settings_autonomy_toggle_and_schedule() -> None:
     async def _get_channel_id() -> str:
         async with service_session() as session:

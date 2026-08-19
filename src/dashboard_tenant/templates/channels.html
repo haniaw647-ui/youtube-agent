@@ -87,6 +87,8 @@
   </form>
 
   <form method="post" action="/dashboard/channels/{{ c.id }}/jobs/create" style="margin-top: 1rem;">
+    <input type="text" name="topic_brief"
+           placeholder="Topic/theme for this video (optional — leave blank to let AI pick)">
     <button type="submit">Start new video job</button>
   </form>
   <a href="/dashboard/jobs?channel_id={{ c.id }}">View jobs for this channel</a>
