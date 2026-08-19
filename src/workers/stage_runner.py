@@ -84,6 +84,16 @@ async def _insert_running_stage(job_id: str, tenant_id: uuid.UUID, stage: str) -
                 },
             )
         ).scalar_one()
+        # jobs.current_stage previously only advanced when a stage *finished*
+        # successfully, so a job stuck retrying a stage (or dead after
+        # exhausting retries) showed the last stage that actually completed
+        # instead of the one it's stuck on — confirmed live, genuinely
+        # confusing on the dashboard. Stamping it here, the moment a stage
+        # attempt actually starts, keeps it reflecting reality even mid-retry.
+        await session.execute(
+            text("UPDATE jobs SET current_stage = :stage, updated_at = :now WHERE id = :job_id"),
+            {"stage": stage, "now": utcnow_naive(), "job_id": job_id},
+        )
         await session.commit()
     return stage_row_id
 
@@ -114,16 +124,14 @@ async def execute_stage(job_id: str, tenant_id: str, stage: str) -> None:
         raise
 
     async with service_session() as session:
+        # current_stage is already stamped by _insert_running_stage when this
+        # attempt started; no need to set it again on success.
         await session.execute(
             text(
                 "UPDATE job_stages SET status = 'done', finished_at = :now, "
                 "output_ref = :output_ref WHERE id = :id"
             ),
             {"id": stage_row_id, "now": utcnow_naive(), "output_ref": json.dumps(output_ref)},
-        )
-        await session.execute(
-            text("UPDATE jobs SET current_stage = :stage, updated_at = :now WHERE id = :job_id"),
-            {"stage": stage, "now": utcnow_naive(), "job_id": job_id},
         )
         await session.commit()
 
