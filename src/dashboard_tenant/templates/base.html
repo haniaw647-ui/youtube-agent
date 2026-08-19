@@ -180,7 +180,7 @@
         <a href="/dashboard/channels" {% if active_nav == 'channels' %}class="active"{% endif %}>📺 Channels</a>
         <a href="/dashboard/jobs" {% if active_nav == 'jobs' %}class="active"{% endif %}>🎬 Jobs</a>
         <a href="/dashboard/analytics" {% if active_nav == 'analytics' %}class="active"{% endif %}>📈 Analytics</a>
-        <a href="/dashboard/approvals" {% if active_nav == 'approvals' %}class="active"{% endif %}>✅ Approvals</a>
+        <a href="/dashboard/approvals" {% if active_nav == 'approvals' %}class="active"{% endif %}>✅ Approvals <span id="approvals-badge" style="display:none; background: var(--accent-2); color: #fff; border-radius: 999px; font-size: 0.72rem; padding: 0.05rem 0.45rem; margin-left: 0.3rem;"></span></a>
         <a href="/dashboard/notifications" {% if active_nav == 'notifications' %}class="active"{% endif %}>🔔 Notifications</a>
         <a href="/dashboard/api-keys" {% if active_nav == 'api-keys' %}class="active"{% endif %}>🔑 API Keys</a>
         <a href="/dashboard/logout">🚪 Log out</a>
@@ -230,6 +230,28 @@
       });
     }
     document.addEventListener('DOMContentLoaded', localizeTimes);
+
+    // Polls for pending approvals so a tenant sees a job is waiting on them
+    // without navigating anywhere — also nudges the tab title so it's
+    // visible even when this tab isn't focused.
+    const _baseTitle = document.title;
+    async function pollApprovalsBadge() {
+      try {
+        const res = await fetch('/dashboard/approvals/count');
+        if (!res.ok) return;
+        const { count } = await res.json();
+        const badge = document.getElementById('approvals-badge');
+        if (badge) {
+          badge.style.display = count > 0 ? 'inline-block' : 'none';
+          badge.textContent = count > 0 ? String(count) : '';
+        }
+        document.title = count > 0 ? `(${count}) ${_baseTitle}` : _baseTitle;
+      } catch (e) {
+        // Transient network hiccup — next poll will retry.
+      }
+    }
+    document.addEventListener('DOMContentLoaded', pollApprovalsBadge);
+    setInterval(pollApprovalsBadge, 20000);
   </script>
 </body>
 </html>

@@ -4,7 +4,7 @@
 <h2>Notifications</h2>
 
 {% if not items %}
-  <p>No notifications yet — you'll see job completions and failures here.</p>
+  <p>No notifications yet — you'll see job completions, failures, and approval requests here.</p>
 {% endif %}
 
 {% for n in items %}
@@ -13,6 +13,8 @@
     <p class="success">{{ n.detail }}</p>
   {% elif n.message_type == 'job_failed' %}
     <p class="error">{{ n.detail }}</p>
+  {% elif n.message_type == 'awaiting_approval' %}
+    <p style="color: var(--accent);">{{ n.detail }} — <a href="/dashboard/approvals">review →</a></p>
   {% else %}
     <p>{{ n.detail }}</p>
   {% endif %}

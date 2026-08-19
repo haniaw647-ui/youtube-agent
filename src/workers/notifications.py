@@ -44,6 +44,38 @@ async def notify_job_success(job_id: str) -> None:
         await session.commit()
 
 
+async def notify_job_awaiting_approval(job_id: str, tenant_id: str, stage: str) -> None:
+    """Called from stage_runner._mark_awaiting_approval — the single place a
+    job stops for a human gate (topic_scoring, script_qa escalation, or the
+    hard-coded final_qa/youtube_upload gate). Without this, a tenant only
+    finds out a job is waiting by happening to check the dashboard."""
+    async with service_session() as session:
+        job_row = (
+            (
+                await session.execute(
+                    text("SELECT title FROM jobs WHERE id = :id"), {"id": job_id}
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if job_row is None:
+            return
+
+        title = job_row["title"] or job_id
+        detail = f'"{title}" needs your approval at {stage}'
+        await session.execute(
+            text(
+                "INSERT INTO notifications_sent "
+                "(tenant_id, job_id, notify_channel, message_type, status, detail) "
+                "VALUES (:tenant_id, :job_id, 'in_app', 'awaiting_approval', 'delivered', "
+                " :detail)"
+            ),
+            {"tenant_id": tenant_id, "job_id": job_id, "detail": detail},
+        )
+        await session.commit()
+
+
 async def notify_job_failure(job_id: str, tenant_id: str, stage: str, error: str) -> None:
     """Called only once a stage's retries are truly exhausted (see the
     `self.request.retries >= self.max_retries` check in tasks/light.py and

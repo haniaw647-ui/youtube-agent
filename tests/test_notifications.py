@@ -18,7 +18,11 @@ from src.dashboard_tenant.auth import require_tenant
 from src.orchestrator.db import service_session
 from src.orchestrator.main import app
 from src.orchestrator.tenants import ensure_tenant
-from src.workers.notifications import notify_job_failure, notify_job_success
+from src.workers.notifications import (
+    notify_job_awaiting_approval,
+    notify_job_failure,
+    notify_job_success,
+)
 
 TENANT = uuid.uuid4()
 
@@ -39,6 +43,9 @@ def teardown_module(_module: object) -> None:
                     "(SELECT id FROM jobs WHERE tenant_id = :t)"
                 ),
                 {"t": TENANT},
+            )
+            await session.execute(
+                text("DELETE FROM job_stages WHERE tenant_id = :t"), {"t": TENANT}
             )
             await session.execute(text("DELETE FROM jobs WHERE tenant_id = :t"), {"t": TENANT})
             await session.execute(text("DELETE FROM channels WHERE tenant_id = :t"), {"t": TENANT})
@@ -128,3 +135,44 @@ def test_notifications_page_renders_real_rows() -> None:
     resp = client.get("/dashboard/notifications")
     assert resp.status_code == 200
     assert "Page Render Test Video" in resp.text
+
+
+def test_notify_job_awaiting_approval_writes_a_notification() -> None:
+    job_id = f"job_notif_approval_{uuid.uuid4().hex[:8]}"
+    asyncio.run(_seed_job(job_id, "Needs A Human Video"))
+
+    asyncio.run(notify_job_awaiting_approval(job_id, str(TENANT), "youtube_upload"))
+
+    row = asyncio.run(_notification_row(job_id))
+    assert row is not None
+    assert row["notify_channel"] == "in_app"
+    assert row["message_type"] == "awaiting_approval"
+    assert "Needs A Human Video" in row["detail"]
+    assert "youtube_upload" in row["detail"]
+
+    resp = client.get("/dashboard/notifications")
+    assert resp.status_code == 200
+    assert "Needs A Human Video" in resp.text
+    assert "review" in resp.text
+
+
+def test_approvals_count_reflects_pending_job_stages() -> None:
+    job_id = f"job_notif_count_{uuid.uuid4().hex[:8]}"
+    asyncio.run(_seed_job(job_id, "Count Test Video"))
+
+    async def _insert_awaiting_stage() -> None:
+        async with service_session() as session:
+            await session.execute(
+                text(
+                    "INSERT INTO job_stages (job_id, tenant_id, stage, status) "
+                    "VALUES (:job_id, :t, 'youtube_upload', 'awaiting_approval')"
+                ),
+                {"job_id": job_id, "t": TENANT},
+            )
+            await session.commit()
+
+    asyncio.run(_insert_awaiting_stage())
+
+    resp = client.get("/dashboard/approvals/count")
+    assert resp.status_code == 200
+    assert resp.json()["count"] >= 1
