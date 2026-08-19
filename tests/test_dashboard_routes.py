@@ -150,7 +150,11 @@ def test_channel_settings_autonomy_toggle_and_schedule() -> None:
         return dict(row)
 
     channel = asyncio.run(_read_channel())
-    assert channel["approval_gates"] == {"youtube_upload": False}
+    assert channel["approval_gates"] == {
+        "youtube_upload": False,
+        "topic_scoring": False,
+        "script_qa": False,
+    }
     assert channel["posting_frequency"] == "daily"
 
     resp = client.get("/dashboard/channels")
@@ -164,7 +168,11 @@ def test_channel_settings_autonomy_toggle_and_schedule() -> None:
     )
     assert resp.status_code == 303
     channel = asyncio.run(_read_channel())
-    assert channel["approval_gates"] == {"youtube_upload": True}
+    assert channel["approval_gates"] == {
+        "youtube_upload": True,
+        "topic_scoring": False,
+        "script_qa": False,
+    }
     assert channel["posting_frequency"] is None
 
 

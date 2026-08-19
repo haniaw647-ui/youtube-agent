@@ -7,7 +7,7 @@ from sqlalchemy import text
 from src.models.pipeline import PIPELINE_STAGES
 from src.orchestrator.db import service_session
 from src.orchestrator.timeutil import utcnow_naive
-from src.workers.notifications import notify_job_success
+from src.workers.notifications import notify_job_awaiting_approval, notify_job_success
 from src.workers.stages import (
     background_music,
     final_qa,
@@ -90,8 +90,17 @@ async def _insert_running_stage(job_id: str, tenant_id: uuid.UUID, stage: str) -
         # instead of the one it's stuck on — confirmed live, genuinely
         # confusing on the dashboard. Stamping it here, the moment a stage
         # attempt actually starts, keeps it reflecting reality even mid-retry.
+        # overall_status='running' is the companion fix: resuming a job from
+        # 'awaiting_approval' (or a revision loop) never reset it, so a
+        # resumed job kept showing 'awaiting_approval' on the dashboard even
+        # while a stage was actively running/retrying — every real stage
+        # attempt passes through here, so it's the correct single place to
+        # keep both fields honest.
         await session.execute(
-            text("UPDATE jobs SET current_stage = :stage, updated_at = :now WHERE id = :job_id"),
+            text(
+                "UPDATE jobs SET current_stage = :stage, overall_status = 'running', "
+                "updated_at = :now WHERE id = :job_id"
+            ),
             {"stage": stage, "now": utcnow_naive(), "job_id": job_id},
         )
         await session.commit()
@@ -215,6 +224,7 @@ async def _mark_awaiting_approval(job_id: str, tenant_id: uuid.UUID, stage: str)
             {"job_id": job_id, "tenant_id": tenant_id, "stage": stage},
         )
         await session.commit()
+    await notify_job_awaiting_approval(job_id, str(tenant_id), stage)
 
 
 async def resume_after_approval(job_id: str, tenant_id: str, stage: str) -> None:
@@ -230,6 +240,30 @@ async def resume_after_approval(job_id: str, tenant_id: str, stage: str) -> None
         await _try_enqueue(job_id, tenant_id, "visual_generation")
         return
     enqueue_stage(job_id, tenant_id, stage)
+
+
+# Gates where rejecting with notes can be turned into a real revision instead
+# of just killing the job — the value is the stage to re-run, which reads the
+# tenant's notes back out of the approvals table itself (script_writing.py /
+# topic_generation.py) rather than needing them passed through here.
+REJECTION_REVISION_SOURCE_STAGE = {
+    "script_qa": "script_writing",
+    "topic_scoring": "topic_generation",
+}
+
+
+def resume_after_rejection_with_feedback(job_id: str, tenant_id: str, stage: str) -> bool:
+    """Called by the reject endpoint when the tenant left notes on a gate that
+    supports turning rejection into a revision. Returns False (does nothing)
+    for gates with no revision path — e.g. youtube_upload/final_qa, where
+    "what to change" would mean re-rendering the whole video, not something a
+    text note alone can drive — so the caller falls back to just failing the
+    job."""
+    source_stage = REJECTION_REVISION_SOURCE_STAGE.get(stage)
+    if source_stage is None:
+        return False
+    enqueue_stage(job_id, tenant_id, source_stage)
+    return True
 
 
 async def _mark_job_done(job_id: str) -> None:

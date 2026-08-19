@@ -32,7 +32,9 @@
     <div class="script-content">{{ item.detail.job_meta.description }}</div>
     <p><strong>Tags:</strong> {{ item.detail.job_meta.tags | join(', ') }}</p>
     {% if item.detail.video_storage_path %}
-      <p><strong>Final video:</strong> <code>{{ item.detail.video_storage_path }}</code></p>
+      <p><strong>Final video:</strong></p>
+      <video controls preload="metadata" style="max-width: 100%; border-radius: 10px;"
+             src="/dashboard/jobs/{{ item.job_id }}/video-preview"></video>
     {% endif %}
     {% if item.detail.final_qa %}
       <p><strong>Final QA: {{ 'PASSED' if item.detail.final_qa.passed else 'FAILED' }}</strong></p>
@@ -52,6 +54,11 @@
   {% endif %}
 
   <form method="post" action="/dashboard/approvals/{{ item.job_id }}/{{ item.stage }}" style="margin-top: 1rem;">
+    {% if item.stage in revisable_stages %}
+      <textarea name="notes" rows="3" placeholder="What should change? Rejecting with notes here regenerates it with your feedback instead of just failing the job."></textarea>
+    {% else %}
+      <textarea name="notes" rows="2" placeholder="Optional notes (rejecting here can't auto-revise the rendered video — you'll need to start a new job)."></textarea>
+    {% endif %}
     <button type="submit" name="decision" value="approved">Approve</button>
     <button type="submit" name="decision" value="rejected">Reject</button>
   </form>

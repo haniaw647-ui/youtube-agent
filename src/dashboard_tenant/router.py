@@ -4,8 +4,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 
@@ -17,10 +17,17 @@ from src.orchestrator.guardrails import TenantLimitExceeded, check_tenant_job_li
 from src.orchestrator.routes.channels import DEFAULT_APPROVAL_GATES, _delete_channel_cascade
 from src.orchestrator.routes.tenant_keys import SUPPORTED_PROVIDERS
 from src.orchestrator.security import decrypt, encrypt, mask
+from src.orchestrator.storage import get_storage_provider
 from src.orchestrator.supabase_auth import SupabaseAuthError, login, request_password_reset, signup
 from src.orchestrator.tenants import ensure_tenant
+from src.providers.storage.base import StorageProvider
 from src.workers.scheduler import POSTING_FREQUENCIES
-from src.workers.stage_runner import enqueue_stage, resume_after_approval
+from src.workers.stage_runner import (
+    REJECTION_REVISION_SOURCE_STAGE,
+    enqueue_stage,
+    resume_after_approval,
+    resume_after_rejection_with_feedback,
+)
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -224,7 +231,7 @@ async def channels_list(
                 await session.execute(
                     text(
                         "SELECT id, name, niche, youtube_channel_id, "
-                        "approval_gates, posting_frequency "
+                        "approval_gates, posting_frequency, background_music_url "
                         "FROM channels ORDER BY created_at"
                     )
                 )
@@ -280,22 +287,32 @@ async def create_channel_submit(
 async def update_channel_settings(
     channel_id: str,
     require_upload_approval: str = Form("off"),
+    require_topic_approval: str = Form("off"),
+    require_script_approval: str = Form("off"),
     posting_frequency: str = Form(""),
+    background_music_url: str = Form(""),
     tenant_id=Depends(require_tenant),
 ) -> RedirectResponse:
     # Phase 10: lets a tenant configure a "fully autonomous" channel (no
     # human gate before youtube_upload) and/or an unattended posting cadence
     # — both were previously only settable at creation time via the raw API.
-    approval_gates = {"youtube_upload": require_upload_approval == "on"}
+    # topic_scoring/script_qa gates work the same way (stage_runner already
+    # supported them; this was just never exposed in the settings form).
+    approval_gates = {
+        "youtube_upload": require_upload_approval == "on",
+        "topic_scoring": require_topic_approval == "on",
+        "script_qa": require_script_approval == "on",
+    }
     async with tenant_session(tenant_id) as session:
         await session.execute(
             text(
-                "UPDATE channels SET approval_gates = :gates, posting_frequency = :freq "
-                "WHERE id = :id"
+                "UPDATE channels SET approval_gates = :gates, posting_frequency = :freq, "
+                "background_music_url = :music_url WHERE id = :id"
             ),
             {
                 "gates": json.dumps(approval_gates),
                 "freq": posting_frequency or None,
+                "music_url": background_music_url or None,
                 "id": channel_id,
             },
         )
@@ -607,8 +624,86 @@ async def approvals_list(request: Request, tenant_id=Depends(require_tenant)) ->
             items.append({**p, "detail": detail})
 
     return templates.TemplateResponse(
-        request, "approvals.html", {"active_nav": "approvals", "items": items}
+        request,
+        "approvals.html",
+        {
+            "active_nav": "approvals",
+            "items": items,
+            "revisable_stages": set(REJECTION_REVISION_SOURCE_STAGE.keys()),
+        },
     )
+
+
+@router.get("/jobs/{job_id}/video-preview")
+async def job_video_preview(
+    job_id: str, request: Request, tenant_id=Depends(require_tenant)
+) -> Response:
+    """Lets a tenant actually watch the rendered video before approving the
+    youtube_upload gate — the approvals page previously only showed the raw
+    storage_path string. tenant_session's RLS scoping is what stops a tenant
+    from previewing a job that isn't theirs, same as every other route here.
+    Supports Range requests so the <video> player can seek."""
+    async with tenant_session(tenant_id) as session:
+        asset = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT storage_path FROM assets WHERE job_id = :job_id "
+                        "AND type = 'video_final' ORDER BY created_at DESC LIMIT 1"
+                    ),
+                    {"job_id": job_id},
+                )
+            )
+            .mappings()
+            .first()
+        )
+    if asset is None:
+        raise HTTPException(status_code=404, detail="No preview video available for this job")
+
+    storage = get_storage_provider()
+    video_bytes = await storage.download_bytes(
+        StorageProvider.key_from_storage_path(asset["storage_path"])
+    )
+    total = len(video_bytes)
+
+    range_header = request.headers.get("range")
+    if range_header:
+        start_s, _, end_s = range_header.removeprefix("bytes=").partition("-")
+        try:
+            start = int(start_s) if start_s else 0
+            end = int(end_s) if end_s else total - 1
+        except ValueError:
+            start, end = 0, total - 1
+        end = min(end, total - 1)
+        chunk = video_bytes[start : end + 1]
+        return Response(
+            content=chunk,
+            status_code=206,
+            media_type="video/mp4",
+            headers={
+                "Content-Range": f"bytes {start}-{end}/{total}",
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(len(chunk)),
+            },
+        )
+    return Response(
+        content=video_bytes,
+        media_type="video/mp4",
+        headers={"Accept-Ranges": "bytes", "Content-Length": str(total)},
+    )
+
+
+@router.get("/approvals/count")
+async def approvals_pending_count(tenant_id=Depends(require_tenant)) -> dict:
+    """Polled from base.html's sidebar badge so a tenant sees a job is
+    waiting on them without having to navigate to the Approvals page."""
+    async with tenant_session(tenant_id) as session:
+        count = (
+            await session.execute(
+                text("SELECT count(*) FROM job_stages WHERE status = 'awaiting_approval'")
+            )
+        ).scalar_one()
+    return {"count": count}
 
 
 @router.get("/notifications", response_class=HTMLResponse)
@@ -633,8 +728,25 @@ async def notifications_list(request: Request, tenant_id=Depends(require_tenant)
 
 @router.post("/approvals/{job_id}/{stage}")
 async def approve_submit(
-    job_id: str, stage: str, decision: str = Form(...), tenant_id=Depends(require_tenant)
+    job_id: str,
+    stage: str,
+    decision: str = Form(...),
+    notes: str = Form(""),
+    tenant_id=Depends(require_tenant),
 ) -> RedirectResponse:
+    notes_clean: str | None = notes.strip() or None
+    # Notes turn a rejection into "here's what to change" instead of a dead
+    # end — reruns the stage that produced what got rejected
+    # (script_writing/topic_generation), which reads these same notes back
+    # out of the approvals row once committed. Gates with no revision path
+    # (youtube_upload/final_qa — no text feedback can re-render a video)
+    # always just fail. Determined up front, purely from stage/notes, so the
+    # DB write below (inside the transaction) and the actual enqueue (after
+    # it commits — same ordering resume_after_approval already relies on, so
+    # the worker never reads the notes before they're actually committed)
+    # agree on the outcome.
+    can_revise = bool(notes_clean) and stage in REJECTION_REVISION_SOURCE_STAGE
+
     async with tenant_session(tenant_id) as session:
         pending = (
             (
@@ -653,22 +765,25 @@ async def approve_submit(
             await session.execute(
                 text(
                     "UPDATE approvals SET resolved_at = now(), resolved_by = 'tenant', "
-                    "decision = :decision WHERE job_id = :job_id AND stage = :stage "
-                    "AND resolved_at IS NULL"
+                    "decision = :decision, notes = :notes WHERE job_id = :job_id "
+                    "AND stage = :stage AND resolved_at IS NULL"
                 ),
-                {"decision": decision, "job_id": job_id, "stage": stage},
+                {"decision": decision, "notes": notes_clean, "job_id": job_id, "stage": stage},
             )
             await session.execute(
                 text("DELETE FROM job_stages WHERE id = :id"), {"id": pending["id"]}
             )
-            if decision != "approved":
+            if decision != "approved" and not can_revise:
                 await session.execute(
                     text("UPDATE jobs SET overall_status = 'failed' WHERE id = :job_id"),
                     {"job_id": job_id},
                 )
 
-    if pending is not None and decision == "approved":
-        await resume_after_approval(job_id, str(tenant_id), stage)
+    if pending is not None:
+        if decision == "approved":
+            await resume_after_approval(job_id, str(tenant_id), stage)
+        elif can_revise:
+            resume_after_rejection_with_feedback(job_id, str(tenant_id), stage)
     return RedirectResponse("/dashboard/approvals", status_code=303)
 
 

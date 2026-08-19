@@ -31,3 +31,4 @@ class Channel(Base, TenantScopedMixin, TimestampMixin):
     )
     youtube_channel_id: Mapped[str | None] = mapped_column(nullable=True)
     youtube_refresh_token_encrypted: Mapped[str | None] = mapped_column(nullable=True)
+    background_music_url: Mapped[str | None] = mapped_column(nullable=True)

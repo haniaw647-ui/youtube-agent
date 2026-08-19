@@ -1,6 +1,8 @@
+import logging
 import os
 import tempfile
 
+import httpx
 from sqlalchemy import text
 
 from src.orchestrator.db import service_session
@@ -11,6 +13,9 @@ from src.workers.ffmpeg_utils import (
     mix_background_music,
     probe_duration_seconds,
 )
+from src.workers.stages._http import download
+
+logger = logging.getLogger(__name__)
 
 # No real licensed music library is wired up yet (API_REQUIREMENTS.md §2 calls
 # for a curated/licensed set — sourcing one is a content decision, not
@@ -23,6 +28,12 @@ PLACEHOLDER_ATTRIBUTION = (
     "Synthesized placeholder tone — not licensed for production use. "
     "Replace with a real curated/licensed music library before publishing."
 )
+
+# A tenant supplying their own track's URL is taking responsibility for its
+# licensing themselves — distinct from PLACEHOLDER_LICENSE_TYPE, which is
+# what final_qa's audit_licenses() specifically watches for, so a tenant-
+# supplied track does NOT force the same review gate a placeholder would.
+TENANT_PROVIDED_LICENSE_TYPE = "tenant-provided-url"
 
 
 async def run(job_id: str, tenant_id: str) -> dict:
@@ -49,8 +60,20 @@ async def run(job_id: str, tenant_id: str) -> dict:
             .mappings()
             .one()
         )
+        channel_row = (
+            (
+                await session.execute(
+                    text("SELECT background_music_url FROM channels WHERE id = :id"),
+                    {"id": job_row["channel_id"]},
+                )
+            )
+            .mappings()
+            .one()
+        )
 
     storage = get_storage_provider()
+    license_type = PLACEHOLDER_LICENSE_TYPE
+    attribution = PLACEHOLDER_ATTRIBUTION
     with tempfile.TemporaryDirectory() as tmpdir:
         video_path = os.path.join(tmpdir, "with_captions.mp4")
         video_bytes = await storage.download_bytes(
@@ -61,7 +84,24 @@ async def run(job_id: str, tenant_id: str) -> dict:
 
         duration = await probe_duration_seconds(video_path)
         music_path = os.path.join(tmpdir, "music.mp3")
-        await generate_placeholder_music(duration, music_path)
+        music_url = channel_row["background_music_url"]
+        if music_url:
+            try:
+                music_bytes = await download(music_url)
+                with open(music_path, "wb") as f:
+                    f.write(music_bytes)
+                license_type = TENANT_PROVIDED_LICENSE_TYPE
+                attribution = f"Tenant-supplied track: {music_url}"
+            except (httpx.HTTPError, OSError):
+                logger.warning(
+                    "background_music: failed to download tenant music_url for job %s, "
+                    "falling back to the placeholder tone",
+                    job_id,
+                    exc_info=True,
+                )
+                await generate_placeholder_music(duration, music_path)
+        else:
+            await generate_placeholder_music(duration, music_path)
 
         output_path = os.path.join(tmpdir, "final.mp4")
         await mix_background_music(video_path, music_path, output_path)
@@ -82,7 +122,7 @@ async def run(job_id: str, tenant_id: str) -> dict:
                 "tenant_id": job_row["tenant_id"],
                 "job_id": job_id,
                 "storage_path": storage_path,
-                "license_type": PLACEHOLDER_LICENSE_TYPE,
+                "license_type": license_type,
             },
         )
         await session.commit()
@@ -90,6 +130,6 @@ async def run(job_id: str, tenant_id: str) -> dict:
     return {
         "asset_type": "video_final",
         "storage_path": storage_path,
-        "license_type": PLACEHOLDER_LICENSE_TYPE,
-        "attribution_text": PLACEHOLDER_ATTRIBUTION,
+        "license_type": license_type,
+        "attribution_text": attribution,
     }

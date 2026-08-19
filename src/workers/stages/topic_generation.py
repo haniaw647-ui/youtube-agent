@@ -70,6 +70,20 @@ async def run(job_id: str, tenant_id: str) -> dict:
             .scalars()
             .all()
         )
+        human_rejection = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT notes FROM approvals WHERE job_id = :job_id "
+                        "AND stage = 'topic_scoring' AND decision = 'rejected' "
+                        "AND notes IS NOT NULL ORDER BY resolved_at DESC LIMIT 1"
+                    ),
+                    {"job_id": job_id},
+                )
+            )
+            .mappings()
+            .first()
+        )
 
     avoid = "\n".join(f"- {t}" for t in existing_titles) or "(none yet — this is the first topic)"
     user_prompt = (
@@ -82,6 +96,14 @@ async def run(job_id: str, tenant_id: str) -> dict:
         f"{avoid}\n\n"
         f"Generate {NUM_CANDIDATES} new topic candidates."
     )
+    if human_rejection:
+        # The creator rejected the last batch of candidates with specific
+        # feedback on what to change — same reasoning as script_writing's
+        # revision_feedback, just for the topic_scoring gate.
+        user_prompt += (
+            f"\n\nThe creator rejected the previous batch of candidates with this "
+            f"feedback — address it directly:\n{human_rejection['notes']}\n"
+        )
 
     raw = await llm.complete(system=SYSTEM_PROMPT.format(n=NUM_CANDIDATES), user=user_prompt)
     candidates = parse_json_response(raw)

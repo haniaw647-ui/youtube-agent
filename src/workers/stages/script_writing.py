@@ -87,11 +87,31 @@ async def run(job_id: str, tenant_id: str) -> dict:
                 {"job_id": job_id},
             )
         ).scalar_one()
+        human_rejection = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT notes FROM approvals WHERE job_id = :job_id "
+                        "AND stage = 'script_qa' AND decision = 'rejected' "
+                        "AND notes IS NOT NULL ORDER BY resolved_at DESC LIMIT 1"
+                    ),
+                    {"job_id": job_id},
+                )
+            )
+            .mappings()
+            .first()
+        )
 
     research_notes = (research_row["output_ref"] if research_row else None) or {}
     revision_feedback = None
     if latest_qa and latest_qa["output_ref"] and latest_qa["output_ref"].get("verdict") == "revise":
         revision_feedback = latest_qa["output_ref"].get("feedback")
+    elif human_rejection:
+        # A tenant rejecting the script_qa approval gate with notes is acting
+        # as the QA reviewer themselves — same mechanism the AI's own
+        # 'revise' verdict already uses, just a human-authored feedback
+        # string instead of one the LLM wrote.
+        revision_feedback = human_rejection["notes"]
 
     target_seconds = channel["video_length_target_seconds"] or 600
     target_words = int(target_seconds / 60 * WORDS_PER_MINUTE)

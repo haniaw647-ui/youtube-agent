@@ -44,6 +44,23 @@
 
   <form method="post" action="/dashboard/channels/{{ c.id }}/settings" style="margin-top: 1rem;">
     <label>
+      <input type="checkbox" name="require_topic_approval" style="width: auto; margin-right: 0.4rem;"
+             {% if c.approval_gates.get('topic_scoring') %}checked{% endif %}>
+      Require my approval on topic candidates before scoring
+    </label>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0.3rem 0 0.6rem;">
+      Pauses right after topics are generated so you can approve the raw candidate list before
+      the AI ranks and proceeds with one — not yet a picker for a specific one.
+    </p>
+    <label>
+      <input type="checkbox" name="require_script_approval" style="width: auto; margin-right: 0.4rem;"
+             {% if c.approval_gates.get('script_qa') %}checked{% endif %}>
+      Require my approval on the script before voice/visuals start
+    </label>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0.3rem 0 0.6rem;">
+      Pauses after script QA passes so you can read the script before it's turned into a video.
+    </p>
+    <label>
       <input type="checkbox" name="require_upload_approval" style="width: auto; margin-right: 0.4rem;"
              {% if c.approval_gates.get('youtube_upload', True) %}checked{% endif %}>
       Require my approval before each YouTube upload
@@ -51,6 +68,12 @@
     <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0.3rem 0 0.6rem;">
       Uncheck for a fully autonomous channel — a failed quality check or unresolved license
       still always pauses for review regardless of this setting.
+    </p>
+    <input type="url" name="background_music_url" placeholder="Background music URL (optional — direct link to an audio file)"
+           value="{{ c.background_music_url or '' }}">
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0.3rem 0 0.6rem;">
+      Leave blank to use a synthesized placeholder tone. A track here is used as-is and looped
+      to fit — you're responsible for having the rights to use it.
     </p>
     <select name="posting_frequency">
       <option value="" {% if not c.posting_frequency %}selected{% endif %}>Manual only (no schedule)</option>
