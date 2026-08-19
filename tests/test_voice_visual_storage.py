@@ -168,6 +168,10 @@ def test_get_storage_provider_prefers_supabase_when_configured():
         assert isinstance(get_storage_provider(), SupabaseStorageProvider)
 
     r2_only = Settings(
+        # Explicitly blanked, not just omitted — Settings still falls back to
+        # .env for anything not passed here, and a real Supabase Storage key
+        # now genuinely lives in this project's local .env.
+        supabase_storage_access_key_id="",
         r2_account_id="acct",
         r2_access_key_id="r2key",
         r2_secret_access_key="r2secret",

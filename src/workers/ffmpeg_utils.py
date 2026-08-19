@@ -180,6 +180,25 @@ async def burn_subtitles(video_path: str, srt_path: str, output_path: str) -> No
     )
 
 
+async def generate_silence(duration_seconds: float, output_path: str) -> None:
+    """A silent audio track standing in for real narration when no voice
+    provider is configured — same reasoning as generate_placeholder_music,
+    see the license_type stamped on its asset row by voice_over.py."""
+    await _run(
+        [
+            FFMPEG_BIN,
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"anullsrc=r=44100:cl=mono:duration={duration_seconds}",
+            "-q:a",
+            "9",
+            output_path,
+        ]
+    )
+
+
 async def generate_placeholder_music(duration_seconds: float, output_path: str) -> None:
     """A synthesized ambient tone standing in for a real curated/licensed music
     library (API_REQUIREMENTS.md §2) until one is actually sourced. Never treat
