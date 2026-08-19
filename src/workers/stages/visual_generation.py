@@ -14,6 +14,17 @@ from src.workers.stages._http import download
 DEFAULT_PROVIDER = "pexels"
 FALLBACK_PROVIDER = "pixabay"
 
+# Pixabay's API rejects q over 100 chars outright (400 Bad Request) — Pexels
+# tolerates longer queries, so this only ever surfaced once a real job
+# actually fell back to Pixabay. Applies to both branches: a prior version
+# truncated only the narration fallback, not visual_note, which is exactly
+# what a real script's longer visual_note values blew through.
+_MAX_QUERY_LENGTH = 100
+
+
+def _visual_query_for_segment(segment: dict) -> str:
+    return (segment.get("visual_note") or segment.get("narration", ""))[:_MAX_QUERY_LENGTH]
+
 
 async def run(job_id: str, tenant_id: str) -> dict:
     async with service_session() as session:
@@ -56,7 +67,7 @@ async def run(job_id: str, tenant_id: str) -> dict:
     inserted = 0
     async with service_session() as session:
         for segment in segments:
-            query = segment.get("visual_note") or segment.get("narration", "")[:100]
+            query = _visual_query_for_segment(segment)
             results = await visual.search(query, count=1)
             if not results:
                 continue
