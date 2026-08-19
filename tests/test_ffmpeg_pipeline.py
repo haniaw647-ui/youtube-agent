@@ -67,7 +67,7 @@ async def test_full_video_pipeline_produces_valid_output():
             )
 
         captioned = os.path.join(tmpdir, "captioned.mp4")
-        await burn_subtitles(assembled, srt_path, captioned)
+        await burn_subtitles(assembled, srt_path, captioned, assembled_duration)
         captioned_duration = await probe_duration_seconds(captioned)
         assert captioned_duration == pytest.approx(assembled_duration, abs=0.5)
 

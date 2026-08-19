@@ -21,6 +21,23 @@ ENCODE_THREADS = "2"
 # every render is a placeholder pending human final_qa review anyway.
 ENCODE_PRESET = "ultrafast"
 
+# Empirically confirmed against the real Supabase Storage bucket: 10MB
+# uploads succeed, 30-45MB hit a Cloudflare 524 gateway timeout, and 51MB+
+# gets the connection hard-reset — a ~50MB platform ceiling with no override
+# on the free tier. CRF-mode encoding leaves output size unbounded (it grows
+# with script length), so long scripts silently blew past that wall with no
+# useful error. Targeting an explicit bitrate keeps size ≈ duration-agnostic:
+# any script length lands under budget, with headroom for subtitle_burn_in's
+# downstream re-encode of the same content.
+STORAGE_SAFE_MAX_BYTES = 30_000_000
+AUDIO_BITRATE_KBPS = 96
+MIN_VIDEO_BITRATE_KBPS = 200
+
+
+def _video_bitrate_kbps(duration_seconds: float) -> int:
+    total_kbps = (STORAGE_SAFE_MAX_BYTES * 8 / 1000) / max(duration_seconds, 1)
+    return max(MIN_VIDEO_BITRATE_KBPS, int(total_kbps - AUDIO_BITRATE_KBPS))
+
 
 class FfmpegError(Exception):
     pass
@@ -107,6 +124,8 @@ async def build_video_from_images_and_audio(
     if len(image_paths) != len(durations):
         raise ValueError("image_paths and durations must be the same length")
 
+    bitrate_kbps = _video_bitrate_kbps(sum(durations))
+
     with tempfile.TemporaryDirectory() as tmpdir:
         clip_paths = []
         for i, (image_path, duration) in enumerate(zip(image_paths, durations, strict=True)):
@@ -134,6 +153,12 @@ async def build_video_from_images_and_audio(
                     ENCODE_THREADS,
                     "-preset",
                     ENCODE_PRESET,
+                    "-b:v",
+                    f"{bitrate_kbps}k",
+                    "-maxrate",
+                    f"{bitrate_kbps}k",
+                    "-bufsize",
+                    f"{bitrate_kbps * 2}k",
                     clip_path,
                 ]
             )
@@ -183,7 +208,10 @@ async def build_video_from_images_and_audio(
         )
 
 
-async def burn_subtitles(video_path: str, srt_path: str, output_path: str) -> None:
+async def burn_subtitles(
+    video_path: str, srt_path: str, output_path: str, duration_seconds: float
+) -> None:
+    bitrate_kbps = _video_bitrate_kbps(duration_seconds)
     await _run(
         [
             FFMPEG_BIN,
@@ -198,6 +226,12 @@ async def burn_subtitles(video_path: str, srt_path: str, output_path: str) -> No
             ENCODE_THREADS,
             "-preset",
             ENCODE_PRESET,
+            "-b:v",
+            f"{bitrate_kbps}k",
+            "-maxrate",
+            f"{bitrate_kbps}k",
+            "-bufsize",
+            f"{bitrate_kbps * 2}k",
             output_path,
         ]
     )

@@ -79,7 +79,8 @@ async def run(job_id: str, tenant_id: str) -> dict:
             f.write(srt_content)
 
         output_path = os.path.join(tmpdir, "with_captions.mp4")
-        await burn_subtitles(video_path, srt_path, output_path)
+        duration_seconds = assembly_stage["output_ref"]["total_duration_seconds"]
+        await burn_subtitles(video_path, srt_path, output_path, duration_seconds)
 
         with open(output_path, "rb") as f:
             captioned_bytes = f.read()
