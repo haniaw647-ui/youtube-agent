@@ -26,13 +26,26 @@ class Settings(BaseSettings):
     secret_key: str = "dev-only-not-secure"
     encryption_key: str = ""
 
-    # Object storage (Cloudflare R2) — platform-level, not tenant BYO, since
-    # storage is infra the platform provides regardless of provider choice.
+    # Object storage — platform-level, not tenant BYO, since storage is infra
+    # the platform provides regardless of provider choice. Cloudflare R2
+    # (original choice) needs a billing signup even on its free tier;
+    # Supabase Storage's S3-compatible endpoint (same project already used
+    # for Postgres/Auth, no separate signup) is preferred when configured —
+    # see get_storage_provider() in src/orchestrator/storage.py.
     r2_account_id: str = ""
     r2_access_key_id: str = ""
     r2_secret_access_key: str = ""
     r2_bucket_name: str = ""
     r2_public_base_url: str = ""
+
+    # Endpoint lives on storage.supabase.co, not supabase.co — a different
+    # subdomain than SUPABASE_URL, confirmed against the real dashboard value
+    # rather than derived/guessed.
+    supabase_storage_endpoint: str = ""
+    supabase_storage_access_key_id: str = ""
+    supabase_storage_secret_access_key: str = ""
+    supabase_storage_bucket: str = ""
+    supabase_storage_region: str = "us-east-1"
 
     # Shared platform-level YouTube OAuth client — every tenant authorizes
     # this same client against their own channel (ARCHITECTURE.md §9).

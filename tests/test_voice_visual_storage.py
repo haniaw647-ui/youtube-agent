@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from src.providers.storage.r2 import R2StorageProvider
+from src.providers.storage.supabase_storage import SupabaseStorageProvider
 from src.providers.visual.pexels import PexelsProvider
 from src.providers.voice.elevenlabs import ElevenLabsProvider
 from src.providers.voice.openai_tts import OpenAITTSProvider
@@ -90,3 +91,63 @@ async def test_r2_storage_uploads_and_returns_reference():
     assert kwargs["Bucket"] == "my-bucket"
     assert kwargs["Key"] == "path/to/file.mp3"
     assert kwargs["Body"] == b"data"
+
+
+@pytest.mark.asyncio
+async def test_supabase_storage_uploads_and_returns_reference():
+    put_object = AsyncMock()
+
+    class _FakeS3Client:
+        async def put_object(self, **kwargs):
+            return await put_object(**kwargs)
+
+    @asynccontextmanager
+    async def _fake_client(*args, **kwargs):
+        yield _FakeS3Client()
+
+    provider = SupabaseStorageProvider(
+        endpoint_url="https://abcxyz.storage.supabase.co/storage/v1/s3",
+        access_key_id="key",
+        secret_access_key="secret",
+        bucket="media",
+        region="us-east-1",
+    )
+    with patch.object(provider._session, "client", new=_fake_client):
+        result = await provider.upload_bytes("path/to/file.mp3", b"data", "audio/mpeg")
+
+    # Deliberately the same r2:// scheme as R2StorageProvider — it's an
+    # internal marker for StorageProvider.key_from_storage_path, not tied to
+    # which service actually stored the bytes.
+    assert result == "r2://media/path/to/file.mp3"
+    put_object.assert_awaited_once()
+    _, kwargs = put_object.await_args
+    assert kwargs["Bucket"] == "media"
+    assert kwargs["Key"] == "path/to/file.mp3"
+    assert kwargs["Body"] == b"data"
+
+
+def test_get_storage_provider_prefers_supabase_when_configured():
+    from src.orchestrator.config import Settings
+    from src.orchestrator.storage import get_storage_provider
+
+    with_supabase = Settings(
+        supabase_storage_endpoint="https://abcxyz.storage.supabase.co/storage/v1/s3",
+        supabase_storage_access_key_id="key",
+        supabase_storage_secret_access_key="secret",
+        supabase_storage_bucket="media",
+        r2_account_id="acct",
+        r2_access_key_id="r2key",
+        r2_secret_access_key="r2secret",
+        r2_bucket_name="r2-bucket",
+    )
+    with patch("src.orchestrator.storage.get_settings", return_value=with_supabase):
+        assert isinstance(get_storage_provider(), SupabaseStorageProvider)
+
+    r2_only = Settings(
+        r2_account_id="acct",
+        r2_access_key_id="r2key",
+        r2_secret_access_key="r2secret",
+        r2_bucket_name="r2-bucket",
+    )
+    with patch("src.orchestrator.storage.get_settings", return_value=r2_only):
+        assert isinstance(get_storage_provider(), R2StorageProvider)
