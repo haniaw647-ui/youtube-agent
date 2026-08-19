@@ -223,7 +223,7 @@ async def channels_list(
             (
                 await session.execute(
                     text(
-                        "SELECT id, name, niche, youtube_channel_id, whatsapp_recipient_number, "
+                        "SELECT id, name, niche, youtube_channel_id, "
                         "approval_gates, posting_frequency "
                         "FROM channels ORDER BY created_at"
                     )
@@ -311,20 +311,6 @@ async def delete_channel_submit(
     if not found:
         return RedirectResponse("/dashboard/channels?error=Channel+not+found", status_code=303)
     return RedirectResponse("/dashboard/channels?deleted=1", status_code=303)
-
-
-@router.post("/channels/{channel_id}/whatsapp")
-async def set_whatsapp_number(
-    channel_id: str,
-    whatsapp_recipient_number: str = Form(...),
-    tenant_id=Depends(require_tenant),
-) -> RedirectResponse:
-    async with tenant_session(tenant_id) as session:
-        await session.execute(
-            text("UPDATE channels SET whatsapp_recipient_number = :number WHERE id = :id"),
-            {"number": whatsapp_recipient_number or None, "id": channel_id},
-        )
-    return RedirectResponse("/dashboard/channels", status_code=303)
 
 
 @router.post("/channels/{channel_id}/jobs/create")
@@ -622,6 +608,26 @@ async def approvals_list(request: Request, tenant_id=Depends(require_tenant)) ->
 
     return templates.TemplateResponse(
         request, "approvals.html", {"active_nav": "approvals", "items": items}
+    )
+
+
+@router.get("/notifications", response_class=HTMLResponse)
+async def notifications_list(request: Request, tenant_id=Depends(require_tenant)) -> HTMLResponse:
+    async with tenant_session(tenant_id) as session:
+        rows = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT message_type, detail, sent_at FROM notifications_sent "
+                        "ORDER BY sent_at DESC LIMIT 100"
+                    )
+                )
+            )
+            .mappings()
+            .all()
+        )
+    return templates.TemplateResponse(
+        request, "notifications.html", {"active_nav": "notifications", "items": rows}
     )
 
 

@@ -20,7 +20,7 @@ DEFAULT_APPROVAL_GATES = {"youtube_upload": True}
 
 CHANNEL_FIELDS = (
     "id, name, niche, audience, language, video_length_target_seconds, style, "
-    "posting_frequency, approval_gates, whatsapp_recipient_number"
+    "posting_frequency, approval_gates"
 )
 
 
@@ -33,11 +33,9 @@ class ChannelCreate(BaseModel):
     style: str | None = None
     posting_frequency: str | None = None
     approval_gates: dict[str, bool] | None = None
-    whatsapp_recipient_number: str | None = None
 
 
 class ChannelUpdate(BaseModel):
-    whatsapp_recipient_number: str | None = None
     # Phase 10: "per-tenant auto-approve rules for channels configured for
     # full autonomy" + "Celery Beat triggers topic generation on each
     # channel's cadence" — both were only ever settable at creation time
@@ -57,7 +55,6 @@ class ChannelOut(BaseModel):
     style: str | None
     posting_frequency: str | None
     approval_gates: dict[str, Any]
-    whatsapp_recipient_number: str | None
 
 
 @router.post("", response_model=ChannelOut)
@@ -75,11 +72,10 @@ async def create_channel(
                     text(
                         "INSERT INTO channels "
                         "(tenant_id, name, niche, audience, language, "
-                        " video_length_target_seconds, style, posting_frequency, approval_gates, "
-                        " whatsapp_recipient_number) "
+                        " video_length_target_seconds, style, posting_frequency, approval_gates) "
                         "VALUES (:tenant_id, :name, :niche, :audience, :language, "
                         " :video_length_target_seconds, :style, :posting_frequency, "
-                        " :approval_gates, :whatsapp_recipient_number) "
+                        " :approval_gates) "
                         f"RETURNING {CHANNEL_FIELDS}"
                     ),
                     {

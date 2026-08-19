@@ -1,7 +1,7 @@
 import asyncio
 
 from src.workers.celery_app import celery_app
-from src.workers.failure_notify import notify_job_failure
+from src.workers.notifications import notify_job_failure
 from src.workers.stage_runner import execute_stage
 
 

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Notifications{% endblock %}
+{% block content %}
+<h2>Notifications</h2>
+
+{% if not items %}
+  <p>No notifications yet — you'll see job completions and failures here.</p>
+{% endif %}
+
+{% for n in items %}
+<div class="card">
+  {% if n.message_type == 'job_completed' %}
+    <p class="success">{{ n.detail }}</p>
+  {% elif n.message_type == 'job_failed' %}
+    <p class="error">{{ n.detail }}</p>
+  {% else %}
+    <p>{{ n.detail }}</p>
+  {% endif %}
+  <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0.3rem 0 0;">{{ n.sent_at }}</p>
+</div>
+{% endfor %}
+{% endblock %}

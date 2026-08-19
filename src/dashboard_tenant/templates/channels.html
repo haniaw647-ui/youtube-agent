@@ -42,14 +42,6 @@
     <a href="/channels/{{ c.id }}/youtube/connect"><button type="button">Connect YouTube</button></a>
   {% endif %}
 
-  <p style="margin-top: 1rem;"><strong>WhatsApp notifications:</strong>
-    {{ c.whatsapp_recipient_number or 'not set' }}</p>
-  <form method="post" action="/dashboard/channels/{{ c.id }}/whatsapp">
-    <input type="text" name="whatsapp_recipient_number" placeholder="+15551234567 (E.164 format)"
-           value="{{ c.whatsapp_recipient_number or '' }}">
-    <button type="submit">Save number</button>
-  </form>
-
   <form method="post" action="/dashboard/channels/{{ c.id }}/settings" style="margin-top: 1rem;">
     <label>
       <input type="checkbox" name="require_upload_approval" style="width: auto; margin-right: 0.4rem;"

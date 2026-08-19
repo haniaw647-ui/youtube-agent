@@ -12,7 +12,7 @@ All "check the ops dashboard" steps assume `/admin` (internal ops dashboard, Pha
 
 **Diagnosis**:
 1. `/admin/jobs` → find the job, note its `current_stage`.
-2. Check `/admin/failures` — if it's there, it already failed terminally and the tenant should have gotten a WhatsApp notification (see §4 if they say they didn't).
+2. Check `/admin/failures` — if it's there, it already failed terminally and the tenant should have a notification on `/dashboard/notifications` (see §4 if they say they didn't).
 3. If it's *not* in failures but also not progressing, query `job_stages` directly for that `job_id`, ordered by `started_at`. The most recent row's `status`:
    - `awaiting_approval` — working as designed. The tenant hasn't reviewed it yet (check the channel's `approval_gates`). Not a bug; a nudge to the tenant is the fix.
    - `running`, with no corresponding `done`/`failed` row and no newer stage — **this is the real "stuck" case.**
@@ -54,26 +54,21 @@ All "check the ops dashboard" steps assume `/admin` (internal ops dashboard, Pha
 **Diagnosis**: `/admin/quota` — shows today's cumulative usage against the 10,000-unit default ceiling and the alert threshold (Phase 9). At ~1,600 units/upload, this is roughly 6 uploads/day platform-wide before it trips.
 
 **Resolution**:
-1. **Immediate**: nothing to do — it clears automatically at UTC midnight (the quota window in `get_todays_quota_usage()` is calendar-day-scoped). Affected jobs stay at their `youtube_upload` stage's failed attempt; Celery's retry/backoff will keep re-attempting up to `max_retries=3` and then terminally fail (with a WhatsApp notification if configured) — so if the quota clears before those retries exhaust, the job may actually recover on its own. If it doesn't (retries exhausted before midnight), the tenant needs to be told to expect a delayed upload, and the job's `youtube_upload` stage needs a manual re-enqueue after midnight.
+1. **Immediate**: nothing to do — it clears automatically at UTC midnight (the quota window in `get_todays_quota_usage()` is calendar-day-scoped). Affected jobs stay at their `youtube_upload` stage's failed attempt; Celery's retry/backoff will keep re-attempting up to `max_retries=3` and then terminally fail (with a `/dashboard/notifications` entry) — so if the quota clears before those retries exhaust, the job may actually recover on its own. If it doesn't (retries exhausted before midnight), the tenant needs to be told to expect a delayed upload, and the job's `youtube_upload` stage needs a manual re-enqueue after midnight.
 2. **Structural**: if this happens often, it means real growth past what the default Google Cloud quota supports. Request a quota increase from Google (Cloud Console → APIs & Services → YouTube Data API v3 → Quotas) — budget real lead time for this, it's not instant. See ARCHITECTURE.md §9.
 3. Since the Phase 10 concurrency fix (`reserve_quota_or_raise`, see `youtube_quota.py`), a burst of concurrent uploads can no longer *overshoot* the ceiling — they'll correctly serialize and the ones that don't fit will fail cleanly with the same message, rather than silently succeeding past the limit.
 
 ---
 
-## 4. WhatsApp template rejected (or any WhatsApp send failure)
+## 4. A tenant says they didn't get notified about a completed/failed job
 
-**Symptom**: a tenant reports never getting a job-completion/failure WhatsApp message despite having a `whatsapp_recipient_number` configured.
+**Symptom**: a tenant reports `/dashboard/notifications` is missing an entry for a job they know finished or failed. (Notifications are in-dashboard only — `src/workers/notifications.py` — there's no external delivery channel anymore, so there's no "send failure" concept to debug; the only question is whether the row got written.)
 
 **Diagnosis**:
-1. Query `notifications_sent` for that `job_id` — a row with `status = 'send_failed'` confirms the platform *tried* and Meta's API rejected it (`whatsapp_notification.py` and `failure_notify.py` both swallow send errors deliberately, so a failure here never masks the underlying job outcome — but it does mean silent-to-the-tenant unless you check this table).
-2. Common rejection causes: the `job_status_update` template isn't approved yet in Meta Business Manager (check its review status there), the recipient number is malformed (not E.164) or hasn't opted in / messaged the business number first (WhatsApp's 24-hour session window rules for non-template messages don't apply here since this is template-based, but a *rejected* template submission would block every send), or `WHATSAPP_ACCESS_TOKEN` expired/was revoked.
-3. Check Railway logs for the `api`/`worker-light` service around the failure timestamp — `WhatsAppCloudAPIProvider.send_template_message`'s underlying HTTP error (from Meta's API) is what actually raised, and the exception is swallowed but not currently logged with full detail (see the improvement note below).
+1. Query `notifications_sent` for that `job_id` directly. If a row exists with `message_type = 'job_completed'` or `'job_failed'`, it's on `/dashboard/notifications` — the tenant is either looking at the wrong tenant/channel or the row is further down the (most-recent-100) list than they scrolled.
+2. If no row exists at all: check `jobs.overall_status` for that job. If it's still `running`/`awaiting_approval`, the job genuinely hasn't reached a terminal state yet — not a notification bug. If it's `done` or `failed` with no matching `notifications_sent` row, `notify_job_success`/`notify_job_failure` either wasn't called or raised before its `INSERT` — check Railway logs for that job_id around the completion/failure timestamp.
 
-**Resolution**:
-1. Fix the root cause in Meta Business Manager (resubmit template, refresh token, verify number format).
-2. There's no automatic re-send of a failed notification — the job's own outcome is unaffected, so nothing pipeline-side needs to happen. If the tenant needs to know their job's outcome now, check `/admin/jobs` or `/dashboard/jobs/{id}` and tell them directly.
-
-**Improvement worth making, not yet done**: `failure_notify.py`'s `except Exception:` swallows the actual error message without logging it — `status='send_failed'` in the DB tells you *that* it failed but not *why* without also correlating Railway logs by timestamp. Logging the exception text into `notifications_sent` (there's no column for it currently) or at least to the application logger would make this diagnosis step faster.
+**Resolution**: since both notifier functions are simple DB writes with no external dependency (no third-party API, no rate limit, no delivery failure mode), a missing row after a confirmed terminal job state is a real bug worth a regression test, not a transient/expected failure the way a WhatsApp send rejection used to be.
 
 ---
 

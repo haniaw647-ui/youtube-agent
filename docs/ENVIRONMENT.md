@@ -47,18 +47,6 @@ Local development uses a `.env` file (git-ignored) loaded via `pydantic-settings
 
 Per-tenant refresh tokens live encrypted in `channels.youtube_refresh_token_encrypted` (DATA_FLOW.md), never as env vars.
 
-## Platform-shared WhatsApp
-
-| Variable | Required | Description |
-|---|---|---|
-| `WHATSAPP_PHONE_NUMBER_ID` | yes | Meta Cloud API sending number ID (one number for the whole platform) |
-| `WHATSAPP_BUSINESS_ACCOUNT_ID` | yes | Meta WABA ID |
-| `WHATSAPP_ACCESS_TOKEN` | yes | Permanent system-user access token (encrypted at rest) |
-| `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | yes | Verifies the webhook endpoint during Meta setup |
-| `WHATSAPP_APP_SECRET` | yes | Verifies `X-Hub-Signature-256` on incoming delivery-status webhooks |
-
-Per-tenant recipient numbers live in `channels.whatsapp_recipient_number` (DATA_FLOW.md), not env vars.
-
 ## Platform-provided music library
 
 | Variable | Required | Description |

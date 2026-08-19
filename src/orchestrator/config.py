@@ -40,17 +40,6 @@ class Settings(BaseSettings):
     youtube_oauth_client_secret: str = ""
     youtube_oauth_redirect_uri: str = ""
 
-    # Shared platform-level WhatsApp Business Cloud API — one sending number,
-    # per-tenant recipient (ARCHITECTURE.md §9's "why these stay platform-level").
-    whatsapp_phone_number_id: str = ""
-    whatsapp_business_account_id: str = ""
-    whatsapp_access_token: str = ""
-    whatsapp_webhook_verify_token: str = ""
-    whatsapp_app_secret: str = ""
-    # Meta requires business-initiated messages to use a pre-approved template.
-    # See docs/PROJECT_STATUS.md for the exact body text submitted for approval.
-    whatsapp_template_name: str = "job_status_update"
-
     # Phase 9 cost/safety guardrails (ARCHITECTURE.md §8) — protect a shared
     # worker fleet and the shared YouTube quota from one tenant's runaway usage.
     max_jobs_per_tenant_per_day: int = 5

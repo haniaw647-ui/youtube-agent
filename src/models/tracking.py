@@ -81,10 +81,13 @@ class NotificationSent(Base, TenantScopedMixin):
         primary_key=True, server_default=text("gen_random_uuid()")
     )
     job_id: Mapped[str | None] = mapped_column(ForeignKey("jobs.id"), nullable=True, index=True)
-    notify_channel: Mapped[str] = mapped_column(nullable=False, server_default="whatsapp")
+    notify_channel: Mapped[str] = mapped_column(nullable=False, server_default="in_app")
     message_type: Mapped[str] = mapped_column(nullable=False)
     status: Mapped[str] = mapped_column(nullable=False)
-    # WhatsApp Cloud API's message id — correlates delivery-status webhook
-    # callbacks (sent/delivered/read/failed) back to this row.
+    # Left over from when notify_channel could be an external provider (e.g.
+    # WhatsApp) whose own delivery-status webhook needed to correlate back to
+    # this row — unused now that everything is in-app, kept nullable rather
+    # than dropped since dropping it needs its own migration for no real gain.
     provider_message_id: Mapped[str | None] = mapped_column(nullable=True, index=True)
+    detail: Mapped[str | None] = mapped_column(nullable=True)
     sent_at: Mapped[datetime] = mapped_column(server_default=text("now()"))

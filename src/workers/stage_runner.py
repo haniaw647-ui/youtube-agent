@@ -7,6 +7,7 @@ from sqlalchemy import text
 from src.models.pipeline import PIPELINE_STAGES
 from src.orchestrator.db import service_session
 from src.orchestrator.timeutil import utcnow_naive
+from src.workers.notifications import notify_job_success
 from src.workers.stages import (
     background_music,
     final_qa,
@@ -21,7 +22,6 @@ from src.workers.stages import (
     video_assembly,
     visual_generation,
     voice_over,
-    whatsapp_notification,
     youtube_upload,
 )
 
@@ -39,8 +39,7 @@ HEAVY_STAGES = {
 PARALLEL_STAGES = {"voice_over", "visual_generation"}
 STAGE_AFTER_PARALLEL = "video_assembly"
 
-# Real implementations for every pipeline stage — the last stub
-# (whatsapp_notification) was replaced in Phase 8.
+# Real implementations for every pipeline stage.
 StageFn = Callable[[str, str], Awaitable[dict]]
 STAGE_IMPLEMENTATIONS: dict[str, StageFn] = {
     "topic_generation": topic_generation.run,
@@ -57,7 +56,6 @@ STAGE_IMPLEMENTATIONS: dict[str, StageFn] = {
     "metadata_generation": metadata_generation.run,
     "final_qa": final_qa.run,
     "youtube_upload": youtube_upload.run,
-    "whatsapp_notification": whatsapp_notification.run,
 }
 
 
@@ -233,6 +231,7 @@ async def _mark_job_done(job_id: str) -> None:
             {"job_id": job_id},
         )
         await session.commit()
+    await notify_job_success(job_id)
 
 
 async def _sibling_done(job_id: str, sibling_stage: str) -> bool:

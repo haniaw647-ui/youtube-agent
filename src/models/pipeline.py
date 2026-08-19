@@ -25,7 +25,6 @@ PIPELINE_STAGES = [
     "metadata_generation",
     "final_qa",
     "youtube_upload",
-    "whatsapp_notification",
 ]
 
 APPROVABLE_STAGES = {"topic_scoring", "script_qa", "final_qa"}

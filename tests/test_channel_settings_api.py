@@ -1,9 +1,8 @@
 """Real, unmocked — proves PATCH /channels/{id} only touches fields the
-caller actually sent (Phase 10 added approval_gates and posting_frequency to
-what was previously whatsapp_recipient_number-only). A naive implementation
-that always overwrote every column would silently wipe a tenant's other
-settings on any partial update; this is exactly the kind of bug that only
-shows up with a real multi-step sequence against a real DB, not by inspection.
+caller actually sent. A naive implementation that always overwrote every
+column would silently wipe a tenant's other settings on any partial update;
+this is exactly the kind of bug that only shows up with a real multi-step
+sequence against a real DB, not by inspection.
 """
 
 import asyncio
@@ -45,7 +44,7 @@ def test_partial_updates_never_clobber_untouched_fields() -> None:
         "/channels",
         json={
             "name": "Partial Update Test Channel",
-            "whatsapp_recipient_number": "+15551234567",
+            "niche": "personal finance",
             "approval_gates": {"youtube_upload": True},
         },
     )
@@ -57,7 +56,7 @@ def test_partial_updates_never_clobber_untouched_fields() -> None:
     body = resp.json()
     assert body["posting_frequency"] == "weekly"
     assert body["approval_gates"] == {"youtube_upload": True}  # untouched
-    assert body["whatsapp_recipient_number"] == "+15551234567"  # untouched
+    assert body["niche"] == "personal finance"  # untouched
 
     resp = client.patch(
         f"/channels/{channel_id}", json={"approval_gates": {"youtube_upload": False}}
@@ -66,7 +65,7 @@ def test_partial_updates_never_clobber_untouched_fields() -> None:
     body = resp.json()
     assert body["approval_gates"] == {"youtube_upload": False}
     assert body["posting_frequency"] == "weekly"  # untouched by this call
-    assert body["whatsapp_recipient_number"] == "+15551234567"  # still untouched
+    assert body["niche"] == "personal finance"  # still untouched
 
 
 def test_empty_patch_is_rejected_rather_than_silently_no_op() -> None:

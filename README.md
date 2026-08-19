@@ -1,6 +1,6 @@
 # AutoTube — Multi-Tenant YouTube Automation Platform
 
-An end-to-end platform that takes a YouTube channel from "idea" to "published video" with minimal human involvement: topic generation → research → script → voice-over → visuals → video assembly → subtitles → music → thumbnail → metadata → quality check → YouTube upload → WhatsApp notification.
+An end-to-end platform that takes a YouTube channel from "idea" to "published video" with minimal human involvement: topic generation → research → script → voice-over → visuals → video assembly → subtitles → music → thumbnail → metadata → quality check → YouTube upload.
 
 It's built as a **multi-tenant SaaS product** — other YouTubers sign up and run their own channels through it, bringing their own AI provider API keys (Anthropic, ElevenLabs, Pexels, etc.). The platform itself never bills for AI usage; it charges (eventually) for access to the pipeline.
 
@@ -8,7 +8,7 @@ It's built as a **multi-tenant SaaS product** — other YouTubers sign up and ru
 
 - **Tenant dashboard** (`/dashboard`) — signup, channel management, starting/monitoring jobs, per-video analytics, approval queue, BYO API key vault. Self-serve, no raw API calls needed.
 - **Internal ops dashboard** (`/admin`) — cross-tenant job monitor, failure list, shared YouTube quota usage, tenant key-connection health, content-policy abuse signals. Operator-only, single shared password.
-- **15-stage Celery pipeline**, fully real (no stubs): every stage from topic generation through YouTube upload and WhatsApp notification actually does the work, backed by swappable provider adapters.
+- **14-stage Celery pipeline**, fully real (no stubs): every stage from topic generation through YouTube upload actually does the work, backed by swappable provider adapters.
 - **Row-Level Security** at the Postgres level for real tenant data isolation, not just application-logic checks — proven with automated tests that run real concurrent cross-tenant requests against production.
 - **Scheduling**: channels can auto-generate content on a cadence (daily/weekly/etc.) via Celery Beat, with per-tenant safety guardrails (daily job caps, concurrency limits) so no single tenant can starve the shared worker fleet or YouTube quota.
 
@@ -23,8 +23,8 @@ Start with **[`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md)** — the living
 | Doc | What it covers |
 |---|---|
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System design, multi-tenancy model, provider-swappable architecture |
-| [`DATA_FLOW.md`](docs/DATA_FLOW.md) | How a job moves through the 15 pipeline stages |
-| [`API_REQUIREMENTS.md`](docs/API_REQUIREMENTS.md) | External services needed (AI providers, YouTube, WhatsApp) and why |
+| [`DATA_FLOW.md`](docs/DATA_FLOW.md) | How a job moves through the 14 pipeline stages |
+| [`API_REQUIREMENTS.md`](docs/API_REQUIREMENTS.md) | External services needed (AI providers, YouTube) and why |
 | [`ENVIRONMENT.md`](docs/ENVIRONMENT.md) | Full environment variable reference |
 | [`IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) | The phased build plan (Phases 0–11) |
 | [`RUNBOOK.md`](docs/RUNBOOK.md) | Operator playbook: stuck jobs, worker crashes, quota exceeded, notification failures, expired tenant keys |

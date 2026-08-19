@@ -3,7 +3,7 @@ import logging
 
 from src.workers.analytics import pull_due_snapshots
 from src.workers.celery_app import celery_app
-from src.workers.failure_notify import notify_job_failure
+from src.workers.notifications import notify_job_failure
 from src.workers.scheduler import run_scheduled_jobs
 from src.workers.stage_runner import execute_stage
 
