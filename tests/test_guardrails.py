@@ -82,6 +82,18 @@ def test_daily_limit_blocks_after_the_configured_count():
         asyncio.run(check_tenant_job_limits(TENANT))
 
 
+def test_failed_jobs_dont_count_against_the_daily_limit():
+    async def _run() -> None:
+        async with service_session() as session:
+            await session.execute(text("DELETE FROM jobs WHERE tenant_id = :t"), {"t": TENANT})
+            await session.commit()
+        await _insert_job("job_grd_test_failed_001", "failed")
+        await _insert_job("job_grd_test_failed_002", "failed")
+        await check_tenant_job_limits(TENANT)  # two failed jobs today — must not raise
+
+    asyncio.run(_run())
+
+
 def test_concurrency_limit_blocks_independent_of_daily_count():
     async def _run() -> None:
         async with service_session() as session:

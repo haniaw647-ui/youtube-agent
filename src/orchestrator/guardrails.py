@@ -21,9 +21,18 @@ async def check_tenant_job_limits(tenant_id: uuid.UUID) -> None:
     today_start = utcnow_naive().replace(hour=0, minute=0, second=0, microsecond=0)
 
     async with tenant_session(tenant_id) as session:
+        # Failed jobs don't count against the daily cap — the limit exists to
+        # bound cost/resource usage from jobs that actually ran, not to
+        # penalize a tenant for a job that died from a pipeline bug (or any
+        # other failure) before doing meaningful work. Confirmed live: this
+        # session's own debugging burned through several failed test runs
+        # and hit the cap on jobs that never got anywhere.
         created_today = (
             await session.execute(
-                text("SELECT count(*) FROM jobs WHERE created_at >= :since"),
+                text(
+                    "SELECT count(*) FROM jobs WHERE created_at >= :since "
+                    "AND overall_status != 'failed'"
+                ),
                 {"since": today_start},
             )
         ).scalar_one()
