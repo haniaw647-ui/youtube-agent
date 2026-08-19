@@ -1,15 +1,18 @@
 from sqlalchemy import text
 
 from src.orchestrator.db import service_session
-from src.orchestrator.provider_keys import get_tenant_key
+from src.orchestrator.provider_keys import MissingProviderKeyError, get_tenant_key
 from src.orchestrator.storage import get_storage_provider
+from src.providers.visual.base import VisualProvider
 from src.providers.visual.pexels import PexelsProvider
+from src.providers.visual.pixabay import PixabayProvider
 from src.workers.stages._http import download
 
 # Stock is the default for every channel — free, zero licensing ambiguity
 # (API_REQUIREMENTS.md §2). Generative visuals are opt-in, added only when a
 # real tenant needs them (ARCHITECTURE.md §15's deliberate scope cut).
 DEFAULT_PROVIDER = "pexels"
+FALLBACK_PROVIDER = "pixabay"
 
 
 async def run(job_id: str, tenant_id: str) -> dict:
@@ -39,9 +42,15 @@ async def run(job_id: str, tenant_id: str) -> dict:
 
     segments = script_stage["output_ref"]["segments"]
 
-    provider_name = DEFAULT_PROVIDER
-    api_key = await get_tenant_key(tenant_id, provider_name)
-    visual = PexelsProvider(api_key)
+    try:
+        provider_name = DEFAULT_PROVIDER
+        api_key = await get_tenant_key(tenant_id, provider_name)
+    except MissingProviderKeyError:
+        provider_name = FALLBACK_PROVIDER
+        api_key = await get_tenant_key(tenant_id, provider_name)
+    visual: VisualProvider = (
+        PexelsProvider(api_key) if provider_name == "pexels" else PixabayProvider(api_key)
+    )
     storage = get_storage_provider()
 
     inserted = 0

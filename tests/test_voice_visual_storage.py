@@ -6,6 +6,7 @@ import pytest
 from src.providers.storage.r2 import R2StorageProvider
 from src.providers.storage.supabase_storage import SupabaseStorageProvider
 from src.providers.visual.pexels import PexelsProvider
+from src.providers.visual.pixabay import PixabayProvider
 from src.providers.voice.elevenlabs import ElevenLabsProvider
 from src.providers.voice.openai_tts import OpenAITTSProvider
 
@@ -62,6 +63,29 @@ async def test_pexels_provider_parses_results():
     assert results[0].url == "https://img.example/1.jpg"
     assert results[0].source == "pexels"
     assert results[0].license_type == "pexels-free-commercial-use"
+
+
+@pytest.mark.asyncio
+async def test_pixabay_provider_parses_results():
+    payload = {
+        "hits": [
+            {"largeImageURL": "https://img.example/2.jpg", "user": "John Smith"},
+            {"largeImageURL": "https://img.example/3.jpg", "user": "Jane Doe"},
+        ]
+    }
+    fake_resp = _FakeHttpResponse(json_data=payload)
+    with patch("httpx.AsyncClient.get", new=AsyncMock(return_value=fake_resp)) as mock_get:
+        provider = PixabayProvider(api_key="fake-key")
+        results = await provider.search("mountains", count=1)
+
+    # Only the first `count` results are returned even though Pixabay's API
+    # was asked for at least 3 (it rejects per_page < 3 outright).
+    assert len(results) == 1
+    assert results[0].url == "https://img.example/2.jpg"
+    assert results[0].source == "pixabay"
+    assert results[0].license_type == "pixabay-content-license"
+    _, kwargs = mock_get.await_args
+    assert kwargs["params"]["per_page"] == 3
 
 
 @pytest.mark.asyncio
