@@ -1,15 +1,25 @@
 from sqlalchemy import text
 
 from src.orchestrator.db import service_session
-from src.orchestrator.provider_keys import get_tenant_key
+from src.orchestrator.provider_keys import MissingProviderKeyError, get_tenant_key
 from src.orchestrator.storage import get_storage_provider
+from src.providers.visual.base import VisualProvider
 from src.providers.visual.pexels import PexelsProvider
+from src.providers.visual.pixabay import PixabayProvider
 from src.workers.stages._http import download
 from src.workers.thumbnail_utils import compose_thumbnail
 
 # Same reasoning as visual_generation: stock is the default, generative image
-# providers are opt-in and not wired up until a real tenant needs one.
+# providers are opt-in and not wired up until a real tenant needs one. Same
+# Pexels->Pixabay fallback too — confirmed live that a tenant with only a
+# Pixabay key hard-failed this stage with no fallback, even though
+# visual_generation.py already handled the identical situation.
 DEFAULT_PROVIDER = "pexels"
+FALLBACK_PROVIDER = "pixabay"
+
+# Pixabay rejects search queries over 100 chars outright (400 Bad Request) —
+# same real bug already hit and fixed in visual_generation.py.
+_MAX_QUERY_LENGTH = 100
 
 
 async def run(job_id: str, tenant_id: str) -> dict:
@@ -37,9 +47,16 @@ async def run(job_id: str, tenant_id: str) -> dict:
             .one()
         )
 
-    api_key = await get_tenant_key(tenant_id, DEFAULT_PROVIDER)
-    visual = PexelsProvider(api_key)
-    results = await visual.search(topic["title"], count=1)
+    try:
+        provider_name = DEFAULT_PROVIDER
+        api_key = await get_tenant_key(tenant_id, provider_name)
+    except MissingProviderKeyError:
+        provider_name = FALLBACK_PROVIDER
+        api_key = await get_tenant_key(tenant_id, provider_name)
+    visual: VisualProvider = (
+        PexelsProvider(api_key) if provider_name == "pexels" else PixabayProvider(api_key)
+    )
+    results = await visual.search(topic["title"][:_MAX_QUERY_LENGTH], count=1)
     if not results:
         raise RuntimeError(f"No stock image found for thumbnail base, job {job_id}")
     result = results[0]
