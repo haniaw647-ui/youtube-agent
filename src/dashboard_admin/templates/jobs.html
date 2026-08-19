@@ -12,7 +12,7 @@
     <td>{{ j.channel_name }}</td>
     <td>{{ j.current_stage }}</td>
     <td class="{% if j.overall_status == 'failed' %}error{% elif j.overall_status == 'awaiting_approval' %}warn{% elif j.overall_status == 'done' %}success{% endif %}">{{ j.overall_status }}</td>
-    <td>{{ j.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+    <td><span class="local-time" data-utc="{{ j.created_at.isoformat() }}Z">{{ j.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</span></td>
   </tr>
   {% endfor %}
 </table>

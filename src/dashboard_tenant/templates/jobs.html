@@ -25,7 +25,7 @@
     <td>{{ j.title or '—' }}</td>
     <td>{{ j.current_stage }}</td>
     <td>{{ j.overall_status }}</td>
-    <td>{{ j.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+    <td><span class="local-time" data-utc="{{ j.created_at.isoformat() }}Z">{{ j.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</span></td>
   </tr>
   {% endfor %}
 </table>

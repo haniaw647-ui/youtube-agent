@@ -24,8 +24,8 @@
       {% endif %}
       {{ s.status }}
     </td>
-    <td>{{ s.started_at.strftime('%Y-%m-%d %H:%M') if s.started_at else '—' }}</td>
-    <td>{{ s.finished_at.strftime('%Y-%m-%d %H:%M') if s.finished_at else '—' }}</td>
+    <td>{% if s.started_at %}<span class="local-time" data-utc="{{ s.started_at.isoformat() }}Z">{{ s.started_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>{% else %}—{% endif %}</td>
+    <td>{% if s.finished_at %}<span class="local-time" data-utc="{{ s.finished_at.isoformat() }}Z">{{ s.finished_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>{% else %}—{% endif %}</td>
     <td class="error">{{ s.error or '' }}</td>
   </tr>
   {% endfor %}

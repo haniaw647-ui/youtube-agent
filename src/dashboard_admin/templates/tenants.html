@@ -7,7 +7,7 @@
 {% for t in tenants %}
 <div class="card">
   <h3>{{ t.display_name or t.id }}</h3>
-  <p style="color: var(--text-muted);">joined {{ t.created_at.strftime('%Y-%m-%d') }}</p>
+  <p style="color: var(--text-muted);">joined <span class="local-time" data-mode="date" data-utc="{{ t.created_at.isoformat() }}Z">{{ t.created_at.strftime('%Y-%m-%d') }} UTC</span></p>
   {% if t.provider_keys %}
     <table>
       <tr><th>Provider</th><th>Status</th></tr>

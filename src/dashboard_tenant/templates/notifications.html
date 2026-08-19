@@ -16,7 +16,7 @@
   {% else %}
     <p>{{ n.detail }}</p>
   {% endif %}
-  <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0.3rem 0 0;">{{ n.sent_at }}</p>
+  <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0.3rem 0 0;"><span class="local-time" data-utc="{{ n.sent_at.isoformat() }}Z">{{ n.sent_at.strftime('%Y-%m-%d %H:%M') }} UTC</span></p>
 </div>
 {% endfor %}
 {% endblock %}
