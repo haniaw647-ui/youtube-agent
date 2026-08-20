@@ -15,12 +15,14 @@
   </select>
 </form>
 
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
 {% if not jobs %}
   <p>No jobs yet — start one from the <a href="/dashboard/channels">Channels</a> page.</p>
 {% endif %}
 
 <table>
-  <tr><th>Job</th><th>Channel</th><th>Title</th><th>Current stage</th><th>Status</th><th>Created</th></tr>
+  <tr><th>Job</th><th>Channel</th><th>Title</th><th>Current stage</th><th>Status</th><th>Created</th><th></th></tr>
   {% for j in jobs %}
   <tr>
     <td><a href="/dashboard/jobs/{{ j.id }}">{{ j.id }}</a></td>
@@ -29,6 +31,14 @@
     <td>{{ j.current_stage }}</td>
     <td>{{ j.overall_status }}</td>
     <td><span class="local-time" data-utc="{{ j.created_at.isoformat() }}Z">{{ j.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</span></td>
+    <td>
+      {% if j.overall_status != 'running' %}
+      <form method="post" action="/dashboard/jobs/{{ j.id }}/delete"
+            onsubmit="return confirm('Delete {{ j.id }}? This removes it from the dashboard permanently — it does not touch anything already uploaded to YouTube.');">
+        <button type="submit" style="background: var(--error);">Delete</button>
+      </form>
+      {% endif %}
+    </td>
   </tr>
   {% endfor %}
 </table>

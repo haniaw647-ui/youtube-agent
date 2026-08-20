@@ -123,6 +123,36 @@ _JOB_DEPENDENT_TABLES = (
 )
 
 
+async def _delete_job_cascade(session: Any, job_id: str) -> bool:
+    """Same dependency walk as _delete_channel_cascade, scoped to a single
+    job instead of every job under a channel. Caller is responsible for
+    deciding whether the job is safe to delete (e.g. not 'running' — a live
+    Celery task would otherwise hit FK violations writing to a job that no
+    longer exists)."""
+    job = (
+        await session.execute(text("SELECT id FROM jobs WHERE id = :id"), {"id": job_id})
+    ).mappings().first()
+    if job is None:
+        return False
+
+    await session.execute(
+        text(
+            "DELETE FROM analytics_snapshots WHERE youtube_video_id IN "
+            "(SELECT id FROM youtube_videos WHERE job_id = :jid)"
+        ),
+        {"jid": job_id},
+    )
+    await session.execute(text("DELETE FROM youtube_videos WHERE job_id = :jid"), {"jid": job_id})
+    for table in _JOB_DEPENDENT_TABLES:
+        await session.execute(
+            text(f"DELETE FROM {table} WHERE job_id = :jid"), {"jid": job_id}
+        )
+    await session.execute(text("UPDATE jobs SET topic_id = NULL WHERE id = :id"), {"id": job_id})
+    await session.execute(text("DELETE FROM topics WHERE job_id = :id"), {"id": job_id})
+    await session.execute(text("DELETE FROM jobs WHERE id = :id"), {"id": job_id})
+    return True
+
+
 async def _delete_channel_cascade(session: Any, channel_id: uuid.UUID) -> bool:
     channel = (
         await session.execute(text("SELECT id FROM channels WHERE id = :id"), {"id": channel_id})

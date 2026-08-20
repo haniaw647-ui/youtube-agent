@@ -40,5 +40,12 @@
   <p><a href="/dashboard/approvals">Review pending approval →</a></p>
 {% endif %}
 <p><a href="/dashboard/jobs">← Back to jobs</a></p>
+
+{% if job.overall_status != 'running' %}
+<form method="post" action="/dashboard/jobs/{{ job.id }}/delete"
+      onsubmit="return confirm('Delete {{ job.id }}? This removes it from the dashboard permanently — it does not touch anything already uploaded to YouTube.');">
+  <button type="submit" style="background: var(--error);">Delete this job</button>
+</form>
+{% endif %}
 {% endif %}
 {% endblock %}

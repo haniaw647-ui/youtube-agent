@@ -14,7 +14,11 @@ from src.models.pipeline import PIPELINE_STAGES
 from src.orchestrator.config import get_settings
 from src.orchestrator.db import tenant_session
 from src.orchestrator.guardrails import TenantLimitExceeded, check_tenant_job_limits
-from src.orchestrator.routes.channels import DEFAULT_APPROVAL_GATES, _delete_channel_cascade
+from src.orchestrator.routes.channels import (
+    DEFAULT_APPROVAL_GATES,
+    _delete_channel_cascade,
+    _delete_job_cascade,
+)
 from src.orchestrator.routes.tenant_keys import SUPPORTED_PROVIDERS
 from src.orchestrator.security import decrypt, encrypt, mask
 from src.orchestrator.storage import get_storage_provider
@@ -527,7 +531,10 @@ async def upload_video_submit(
 
 @router.get("/jobs", response_class=HTMLResponse)
 async def jobs_list(
-    request: Request, tenant_id=Depends(require_tenant), channel_id: str | None = None
+    request: Request,
+    tenant_id=Depends(require_tenant),
+    channel_id: str | None = None,
+    error: str | None = None,
 ) -> HTMLResponse:
     async with tenant_session(tenant_id) as session:
         channels = (
@@ -554,8 +561,38 @@ async def jobs_list(
             "jobs": jobs,
             "channels": channels,
             "selected_channel_id": channel_id,
+            "error": error,
         },
     )
+
+
+@router.post("/jobs/{job_id}/delete")
+async def delete_job(job_id: str, tenant_id=Depends(require_tenant)) -> RedirectResponse:
+    # A job that's still 'running' has a live Celery task working through
+    # PIPELINE_STAGES — deleting it out from under that task would leave the
+    # task writing job_stages/assets rows against a job_id that no longer
+    # exists (FK violations, retried indefinitely). Deletion is only safe
+    # once the job has actually stopped moving on its own.
+    async with tenant_session(tenant_id) as session:
+        job = (
+            (
+                await session.execute(
+                    text("SELECT overall_status FROM jobs WHERE id = :id"), {"id": job_id}
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if job["overall_status"] == "running":
+            return RedirectResponse(
+                "/dashboard/jobs?error="
+                + quote("Can't delete a job that's still running — wait for it to finish."),
+                status_code=303,
+            )
+        await _delete_job_cascade(session, job_id)
+    return RedirectResponse("/dashboard/jobs", status_code=303)
 
 
 @router.get("/jobs/{job_id}", response_class=HTMLResponse)
