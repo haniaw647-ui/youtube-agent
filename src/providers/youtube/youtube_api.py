@@ -1,12 +1,16 @@
 import asyncio
+import logging
 from io import BytesIO
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseUpload
 
 from src.orchestrator.config import get_settings
 from src.providers.youtube.base import UploadResult, VideoStats, YouTubeProvider
+
+logger = logging.getLogger(__name__)
 
 TOKEN_URI = "https://oauth2.googleapis.com/token"
 
@@ -100,8 +104,32 @@ class YouTubeAPIProvider(YouTubeProvider):
         )
         video_id = response["id"]
 
+        # Confirmed live: a real upload had its thumbnails.set() call 403
+        # ("channel not verified" — a real YouTube restriction on custom
+        # thumbnails via the API) *after* the video had already gone up
+        # successfully. Because that raised, the whole task retried and
+        # re-uploaded the entire video from scratch each time — 4 duplicate
+        # videos on the real channel, none of them ever recorded in our DB
+        # (upload_video never returned). The video succeeding is the actual
+        # deliverable; a failed thumbnail is a cosmetic miss, never worth
+        # destroying and re-doing the whole upload over.
+        thumbnail_set = True
         if thumbnail_bytes:
-            thumb_media = MediaIoBaseUpload(BytesIO(thumbnail_bytes), mimetype="image/png")
-            youtube.thumbnails().set(videoId=video_id, media_body=thumb_media).execute()
+            try:
+                thumb_media = MediaIoBaseUpload(BytesIO(thumbnail_bytes), mimetype="image/png")
+                youtube.thumbnails().set(videoId=video_id, media_body=thumb_media).execute()
+            except HttpError:
+                logger.warning(
+                    "youtube_api: failed to set custom thumbnail for video %s "
+                    "(commonly means the channel isn't phone-verified) — "
+                    "video uploaded fine, continuing without it",
+                    video_id,
+                    exc_info=True,
+                )
+                thumbnail_set = False
 
-        return UploadResult(video_id=video_id, url=f"https://www.youtube.com/watch?v={video_id}")
+        return UploadResult(
+            video_id=video_id,
+            url=f"https://www.youtube.com/watch?v={video_id}",
+            thumbnail_set=thumbnail_set,
+        )

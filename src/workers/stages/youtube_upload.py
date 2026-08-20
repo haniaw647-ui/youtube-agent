@@ -150,4 +150,9 @@ async def run(job_id: str, tenant_id: str) -> dict:
         )
         await session.commit()
 
-    return {"video_id": result.video_id, "url": result.url, "privacy_status": privacy_status}
+    return {
+        "video_id": result.video_id,
+        "url": result.url,
+        "privacy_status": privacy_status,
+        "thumbnail_set": result.thumbnail_set,
+    }

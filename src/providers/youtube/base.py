@@ -6,6 +6,12 @@ from dataclasses import dataclass
 class UploadResult:
     video_id: str
     url: str
+    # False when a thumbnail was supplied but setting it failed — most
+    # commonly YouTube's "channel not verified" restriction on
+    # thumbnails.set. The video itself still uploaded successfully; this
+    # is surfaced for the caller to note, not something that should ever
+    # sink an otherwise-successful upload (see YouTubeAPIProvider._upload_sync).
+    thumbnail_set: bool = True
 
 
 @dataclass
