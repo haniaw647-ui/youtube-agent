@@ -42,8 +42,15 @@ async def run(job_id: str, tenant_id: str) -> dict:
             (
                 await session.execute(
                     text(
-                        "SELECT segment_index, storage_path FROM assets "
-                        "WHERE job_id = :job_id AND type = 'visual' ORDER BY segment_index"
+                        # DISTINCT ON + created_at DESC: visual_generation
+                        # can now re-run (rejecting the youtube_upload gate
+                        # with notes re-requests different photos), which
+                        # inserts a second row per segment_index rather than
+                        # replacing the first — this must always resolve to
+                        # the newest one, not silently duplicate/misorder.
+                        "SELECT DISTINCT ON (segment_index) segment_index, storage_path "
+                        "FROM assets WHERE job_id = :job_id AND type = 'visual' "
+                        "ORDER BY segment_index, created_at DESC"
                     ),
                     {"job_id": job_id},
                 )

@@ -2,8 +2,9 @@
 test_dashboard_routes.py's established pattern) — proves rejecting an
 approval gate with notes turns into a revision (re-running the stage that
 produced what got rejected) instead of just failing the job, for the gates
-that support it, and that gates with no revision path (youtube_upload) still
-just fail even when notes are supplied."""
+that support it, and that a gate with no entry in
+REJECTION_REVISION_SOURCE_STAGE still just fails even when notes are
+supplied."""
 
 import asyncio
 import uuid
@@ -132,20 +133,38 @@ def test_rejecting_topic_scoring_with_notes_reruns_topic_generation() -> None:
     assert asyncio.run(_job_status(job_id)) == "awaiting_approval"
 
 
-def test_rejecting_youtube_upload_with_notes_still_fails_no_revision_path() -> None:
+def test_rejecting_youtube_upload_with_notes_reruns_visual_generation() -> None:
     job_id = f"job_reject_upload_{uuid.uuid4().hex[:8]}"
     asyncio.run(_seed_pending_approval(job_id, "youtube_upload"))
 
     with patch("src.workers.stage_runner.enqueue_stage") as mock_enqueue:
         resp = client.post(
             f"/dashboard/approvals/{job_id}/youtube_upload",
-            data={"decision": "rejected", "notes": "The thumbnail looks wrong."},
+            data={"decision": "rejected", "notes": "Change the photos, it's too blurry."},
+        )
+
+    assert resp.status_code == 303
+    mock_enqueue.assert_called_once_with(job_id, str(TENANT), "visual_generation")
+    assert asyncio.run(_job_status(job_id)) == "awaiting_approval"  # not marked failed
+    assert (
+        asyncio.run(_approval_notes(job_id, "youtube_upload"))
+        == "Change the photos, it's too blurry."
+    )
+
+
+def test_rejecting_an_unmapped_gate_with_notes_still_just_fails() -> None:
+    job_id = f"job_reject_unmapped_{uuid.uuid4().hex[:8]}"
+    asyncio.run(_seed_pending_approval(job_id, "final_qa"))
+
+    with patch("src.workers.stage_runner.enqueue_stage") as mock_enqueue:
+        resp = client.post(
+            f"/dashboard/approvals/{job_id}/final_qa",
+            data={"decision": "rejected", "notes": "Some feedback with nowhere to go."},
         )
 
     assert resp.status_code == 303
     mock_enqueue.assert_not_called()
     assert asyncio.run(_job_status(job_id)) == "failed"
-    assert asyncio.run(_approval_notes(job_id, "youtube_upload")) == "The thumbnail looks wrong."
 
 
 def test_rejecting_script_qa_without_notes_still_fails() -> None:

@@ -26,6 +26,16 @@ def _visual_query_for_segment(segment: dict) -> str:
     return (segment.get("visual_note") or segment.get("narration", ""))[:_MAX_QUERY_LENGTH]
 
 
+# A rejected youtube_upload gate re-running visual_generation ("change the
+# photos") must not just fetch the exact same top-scored result again —
+# search results are deterministic for the same query, so re-running
+# unchanged would silently produce byte-identical images. Requesting more
+# candidates and taking a different one is a simple, reliable way to
+# guarantee genuinely different photos without needing to parse what the
+# tenant's free-text notes actually said.
+REVISION_RESULT_COUNT = 3
+
+
 async def run(job_id: str, tenant_id: str) -> dict:
     async with service_session() as session:
         job_row = (
@@ -50,6 +60,15 @@ async def run(job_id: str, tenant_id: str) -> dict:
             .mappings()
             .one()
         )
+        is_revision = (
+            await session.execute(
+                text(
+                    "SELECT 1 FROM approvals WHERE job_id = :job_id AND stage = 'youtube_upload' "
+                    "AND decision = 'rejected' AND notes IS NOT NULL LIMIT 1"
+                ),
+                {"job_id": job_id},
+            )
+        ).first() is not None
 
     segments = script_stage["output_ref"]["segments"]
 
@@ -68,10 +87,16 @@ async def run(job_id: str, tenant_id: str) -> dict:
     async with service_session() as session:
         for segment in segments:
             query = _visual_query_for_segment(segment)
-            results = await visual.search(query, count=1)
+            results = await visual.search(
+                query, count=REVISION_RESULT_COUNT if is_revision else 1
+            )
             if not results:
                 continue
-            result = results[0]
+            # On a revision, prefer the last (least-matched) candidate over
+            # the top one already rejected once — a provider with fewer
+            # than REVISION_RESULT_COUNT results for a query just falls
+            # back to whatever it did return.
+            result = results[-1] if is_revision else results[0]
             image_bytes = await download(result.url)
 
             key = (

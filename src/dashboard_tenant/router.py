@@ -892,14 +892,14 @@ async def approve_submit(
     notes_clean: str | None = notes.strip() or None
     # Notes turn a rejection into "here's what to change" instead of a dead
     # end — reruns the stage that produced what got rejected
-    # (script_writing/topic_generation), which reads these same notes back
-    # out of the approvals row once committed. Gates with no revision path
-    # (youtube_upload/final_qa — no text feedback can re-render a video)
-    # always just fail. Determined up front, purely from stage/notes, so the
-    # DB write below (inside the transaction) and the actual enqueue (after
-    # it commits — same ordering resume_after_approval already relies on, so
-    # the worker never reads the notes before they're actually committed)
-    # agree on the outcome.
+    # (script_writing/topic_generation/visual_generation — see
+    # REJECTION_REVISION_SOURCE_STAGE), which reads these same notes back
+    # out of the approvals row once committed. A gate not in that mapping
+    # always just fails outright. Determined up front, purely from
+    # stage/notes, so the DB write below (inside the transaction) and the
+    # actual enqueue (after it commits — same ordering resume_after_approval
+    # already relies on, so the worker never reads the notes before they're
+    # actually committed) agree on the outcome.
     can_revise = bool(notes_clean) and stage in REJECTION_REVISION_SOURCE_STAGE
     # A human picking a specific candidate (approvals.html's radio buttons,
     # defaulted to the top-scored one) bypasses topic_scoring.py's own

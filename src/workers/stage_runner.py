@@ -246,19 +246,24 @@ async def resume_after_approval(job_id: str, tenant_id: str, stage: str) -> None
 # of just killing the job — the value is the stage to re-run, which reads the
 # tenant's notes back out of the approvals table itself (script_writing.py /
 # topic_generation.py) rather than needing them passed through here.
+# youtube_upload -> visual_generation: re-fetches different stock photos
+# (visual_generation.py takes a different result index once it sees this
+# rejection) and re-renders from there — video_assembly is a PARALLEL_STAGE
+# sibling wait on voice_over, which is already 'done' from the first run,
+# so the existing _advance() machinery cascades straight through
+# video_assembly -> ... -> youtube_upload with no extra wiring needed.
+# Script/voice aren't in question for a "change the photos"/"too blurry"
+# complaint, so they're deliberately not re-run.
 REJECTION_REVISION_SOURCE_STAGE = {
     "script_qa": "script_writing",
     "topic_scoring": "topic_generation",
+    "youtube_upload": "visual_generation",
 }
 
 
 def resume_after_rejection_with_feedback(job_id: str, tenant_id: str, stage: str) -> bool:
     """Called by the reject endpoint when the tenant left notes on a gate that
-    supports turning rejection into a revision. Returns False (does nothing)
-    for gates with no revision path — e.g. youtube_upload/final_qa, where
-    "what to change" would mean re-rendering the whole video, not something a
-    text note alone can drive — so the caller falls back to just failing the
-    job."""
+    supports turning rejection into a revision."""
     source_stage = REJECTION_REVISION_SOURCE_STAGE.get(stage)
     if source_stage is None:
         return False
