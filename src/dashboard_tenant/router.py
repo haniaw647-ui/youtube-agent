@@ -597,16 +597,53 @@ async def job_detail(
             .mappings()
             .all()
         )
+        # approve_submit deletes a gate's job_stages row the moment it's
+        # resolved (the outcome lives in `approvals`, not `job_stages` — see
+        # REJECTION_REVISION_SOURCE_STAGE's docstring), so a resolved gate has
+        # no job_stages row at all and would otherwise wrongly render as
+        # "not_started" here even though it genuinely ran and was decided.
+        approval_rows = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT stage, decision, resolved_at FROM approvals "
+                        "WHERE job_id = :id AND resolved_at IS NOT NULL"
+                    ),
+                    {"id": job_id},
+                )
+            )
+            .mappings()
+            .all()
+        )
 
     by_stage: dict[str, dict] = {}
     for row in stage_rows:
         by_stage[row["stage"]] = dict(row)
+    by_approval: dict[str, dict] = {}
+    for row in approval_rows:
+        by_approval[row["stage"]] = dict(row)
 
-    stages = [
-        by_stage.get(name, {"stage": name, "status": "not_started", "started_at": None,
-                             "finished_at": None, "error": None})
-        for name in PIPELINE_STAGES
-    ]
+    def _stage_row(name: str) -> dict:
+        if name in by_stage:
+            return by_stage[name]
+        if name in by_approval:
+            approval = by_approval[name]
+            return {
+                "stage": name,
+                "status": approval["decision"],
+                "started_at": None,
+                "finished_at": approval["resolved_at"],
+                "error": None,
+            }
+        return {
+            "stage": name,
+            "status": "not_started",
+            "started_at": None,
+            "finished_at": None,
+            "error": None,
+        }
+
+    stages = [_stage_row(name) for name in PIPELINE_STAGES]
     return templates.TemplateResponse(
         request, "job_detail.html", {"active_nav": "jobs", "job": job, "stages": stages}
     )

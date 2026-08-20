@@ -21,6 +21,8 @@
       {% if s.status == 'done' %}✅
       {% elif s.status == 'running' %}⏳
       {% elif s.status == 'awaiting_approval' %}⏸️
+      {% elif s.status == 'approved' %}✅
+      {% elif s.status == 'rejected' %}🚫
       {% elif s.status == 'failed' %}❌
       {% elif s.status == 'not_started' %}—
       {% else %}{{ s.status }}
