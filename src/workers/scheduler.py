@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import text
 
 from src.models.pipeline import PIPELINE_STAGES
-from src.orchestrator.db import service_session
+from src.orchestrator.db import record_job_created, service_session
 from src.orchestrator.guardrails import TenantLimitExceeded, check_tenant_job_limits
 from src.orchestrator.timeutil import utcnow_naive
 
@@ -93,6 +93,7 @@ async def _create_scheduled_job(tenant_id: uuid.UUID, channel_id: uuid.UUID) -> 
             ),
             {"id": job_id, "tenant_id": tenant_id, "channel_id": channel_id, "stage": first_stage},
         )
+        await record_job_created(session, tenant_id, job_id)
         await session.commit()
 
     enqueue_stage(job_id, str(tenant_id), first_stage)

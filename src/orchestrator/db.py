@@ -32,6 +32,20 @@ async def service_session() -> AsyncIterator[AsyncSession]:
         yield session
 
 
+async def record_job_created(
+    session: AsyncSession, tenant_id: uuid.UUID | str, job_id: str
+) -> None:
+    """Append-only log of job creation, deliberately separate from the `jobs`
+    table itself — the dashboard's Activity graph counts this instead of
+    `jobs` directly so that deleting a job (a real feature) doesn't also
+    erase that day's history from the graph. Call this in the same
+    transaction as the `INSERT INTO jobs` so the two can never disagree."""
+    await session.execute(
+        text("INSERT INTO job_creation_events (tenant_id, job_id) VALUES (:tenant_id, :job_id)"),
+        {"tenant_id": str(tenant_id), "job_id": job_id},
+    )
+
+
 @asynccontextmanager
 async def tenant_session(tenant_id: uuid.UUID) -> AsyncIterator[AsyncSession]:
     """RLS-enforced session. Switches the connection to the `authenticated`

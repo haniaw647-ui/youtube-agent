@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from src.models.pipeline import PIPELINE_STAGES
-from src.orchestrator.db import tenant_session
+from src.orchestrator.db import record_job_created, tenant_session
 from src.orchestrator.guardrails import TenantLimitExceeded, check_tenant_job_limits
 from src.orchestrator.supabase_auth import get_current_tenant_id
 from src.workers.stage_runner import enqueue_stage, resume_after_approval
@@ -85,6 +85,7 @@ async def create_job(
             .mappings()
             .one()
         )
+        await record_job_created(session, tenant_id, job_id)
 
     enqueue_stage(job_id, str(tenant_id), first_stage)
     return dict(row)

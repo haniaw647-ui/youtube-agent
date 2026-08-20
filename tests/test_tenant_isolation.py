@@ -44,6 +44,9 @@ def teardown_module(_module: object) -> None:
                 await session.execute(
                     text("DELETE FROM tenant_api_keys WHERE tenant_id = :t"), {"t": tid}
                 )
+                await session.execute(
+                    text("DELETE FROM job_creation_events WHERE tenant_id = :t"), {"t": tid}
+                )
                 await session.execute(text("DELETE FROM jobs WHERE tenant_id = :t"), {"t": tid})
                 await session.execute(text("DELETE FROM channels WHERE tenant_id = :t"), {"t": tid})
                 await session.execute(text("DELETE FROM tenants WHERE id = :t"), {"t": tid})

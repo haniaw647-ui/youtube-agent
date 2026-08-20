@@ -39,6 +39,9 @@ def teardown_module(_module: object) -> None:
             await session.execute(
                 text("DELETE FROM tenant_api_keys WHERE tenant_id = :t"), {"t": TENANT}
             )
+            await session.execute(
+                text("DELETE FROM job_creation_events WHERE tenant_id = :t"), {"t": TENANT}
+            )
             await session.execute(text("DELETE FROM jobs WHERE tenant_id = :t"), {"t": TENANT})
             await session.execute(
                 text("DELETE FROM channels WHERE tenant_id = :t"), {"t": TENANT}
@@ -98,6 +101,21 @@ def test_create_job_from_channel_and_view_pipeline_progress() -> None:
 
     resp = client.get(job_url)
     assert resp.status_code == 200
+
+    # Job creation also logs to the append-only activity table the Overview
+    # page's graph reads from — separate from `jobs` so a later delete of
+    # this job doesn't erase it from that history.
+    async def _event_exists() -> bool:
+        async with service_session() as session:
+            row = (
+                await session.execute(
+                    text("SELECT 1 FROM job_creation_events WHERE job_id = :id"),
+                    {"id": job_id},
+                )
+            ).first()
+            return row is not None
+
+    assert asyncio.run(_event_exists())
     # Every one of the 15 fixed pipeline stages must render, run or not —
     # this is the whole point of the job detail page.
     for stage in PIPELINE_STAGES:

@@ -12,7 +12,7 @@ from sqlalchemy import text
 from src.dashboard_tenant.auth import SESSION_COOKIE, require_tenant
 from src.models.pipeline import PIPELINE_STAGES
 from src.orchestrator.config import get_settings
-from src.orchestrator.db import tenant_session
+from src.orchestrator.db import record_job_created, tenant_session
 from src.orchestrator.guardrails import TenantLimitExceeded, check_tenant_job_limits
 from src.orchestrator.routes.channels import (
     DEFAULT_APPROVAL_GATES,
@@ -189,13 +189,16 @@ async def overview(request: Request, tenant_id=Depends(require_tenant)) -> HTMLR
             .mappings()
             .all()
         )
-        # Last 7 days of job creation, for the activity strip.
+        # Last 7 days of job creation, for the activity strip. Reads from the
+        # append-only job_creation_events log rather than COUNT(*)-ing `jobs`
+        # directly — counting `jobs` meant deleting a job (see /jobs/{id}/delete)
+        # silently erased that day's history from this graph too.
         daily_counts = (
             (
                 await session.execute(
                     text(
                         "SELECT date_trunc('day', created_at) AS day, count(*) AS n "
-                        "FROM jobs WHERE created_at >= now() - interval '7 days' "
+                        "FROM job_creation_events WHERE created_at >= now() - interval '7 days' "
                         "GROUP BY 1 ORDER BY 1"
                     )
                 )
@@ -387,6 +390,7 @@ async def create_job_submit(
                 "topic_brief": topic_brief.strip() or None,
             },
         )
+        await record_job_created(session, tenant_id, job_id)
 
     enqueue_stage(job_id, str(tenant_id), first_stage)
     return RedirectResponse(f"/dashboard/jobs/{job_id}", status_code=303)
@@ -466,6 +470,7 @@ async def upload_video_submit(
                 "tags": json.dumps(tags_list),
             },
         )
+        await record_job_created(session, tenant_id, job_id)
         await session.commit()
 
     upload_cost = UPLOAD_COST_UNITS + (THUMBNAIL_SET_COST_UNITS if thumbnail_bytes else 0)
