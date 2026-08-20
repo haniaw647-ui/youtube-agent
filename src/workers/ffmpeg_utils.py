@@ -22,14 +22,16 @@ ENCODE_THREADS = "2"
 ENCODE_PRESET = "ultrafast"
 
 # Empirically confirmed against the real Supabase Storage bucket: 10MB
-# uploads succeed, 30-45MB hit a Cloudflare 524 gateway timeout, and 51MB+
-# gets the connection hard-reset — a ~50MB platform ceiling with no override
-# on the free tier. CRF-mode encoding leaves output size unbounded (it grows
-# with script length), so long scripts silently blew past that wall with no
-# useful error. Targeting an explicit bitrate keeps size ≈ duration-agnostic:
-# any script length lands under budget, with headroom for subtitle_burn_in's
-# downstream re-encode of the same content.
-STORAGE_SAFE_MAX_BYTES = 30_000_000
+# uploads succeed cleanly; the connection gets hard-reset at 51MB+ — a
+# ~50MB platform ceiling with no override on the free tier. The 30-45MB
+# range hit a Cloudflare 524 gateway timeout when probed from a slow home
+# connection, but Railway's own connection to Supabase is far faster, so
+# 42MB leaves real headroom under the confirmed-hard 51MB wall plus room
+# for subtitle_burn_in's downstream re-encode. CRF-mode encoding leaves
+# output size unbounded (it grows with script length), so long scripts
+# silently blew past that wall with no useful error — targeting an
+# explicit bitrate keeps size ≈ duration-agnostic instead.
+STORAGE_SAFE_MAX_BYTES = 42_000_000
 AUDIO_BITRATE_KBPS = 96
 MIN_VIDEO_BITRATE_KBPS = 200
 
@@ -37,6 +39,33 @@ MIN_VIDEO_BITRATE_KBPS = 200
 def _video_bitrate_kbps(duration_seconds: float) -> int:
     total_kbps = (STORAGE_SAFE_MAX_BYTES * 8 / 1000) / max(duration_seconds, 1)
     return max(MIN_VIDEO_BITRATE_KBPS, int(total_kbps - AUDIO_BITRATE_KBPS))
+
+
+# Confirmed live: a ~9-minute script forced into the size budget above
+# landed at only 320kbps — unwatchably blurry at 1920x1080, especially
+# with zoompan's constant motion (the worst case for compression
+# artifacts). The size budget is fixed, so the fix is choosing a lower
+# *resolution* once the achievable bitrate can't support 1080p — the same
+# bits spread over fewer pixels looks dramatically sharper than stretching
+# them across a full 1080p frame. Thresholds are rough rule-of-thumb
+# "still looks acceptable" bitrates for each tier, not exact science.
+_RESOLUTION_TIERS = (
+    (1500, 1920, 1080),
+    (700, 1280, 720),
+    (350, 854, 480),
+    (0, 640, 360),
+)
+# final_qa's resolution_ok check needs to accept whichever tier actually
+# got picked, not hard-require 1080p — a deliberate downscale for quality
+# is not a defect.
+VALID_RENDER_DIMENSIONS = frozenset((w, h) for _, w, h in _RESOLUTION_TIERS)
+
+
+def _video_dimensions_for_bitrate(bitrate_kbps: int) -> tuple[int, int]:
+    for min_bitrate, width, height in _RESOLUTION_TIERS:
+        if bitrate_kbps >= min_bitrate:
+            return width, height
+    return _RESOLUTION_TIERS[-1][1], _RESOLUTION_TIERS[-1][2]
 
 
 class FfmpegError(Exception):
@@ -125,6 +154,7 @@ async def build_video_from_images_and_audio(
         raise ValueError("image_paths and durations must be the same length")
 
     bitrate_kbps = _video_bitrate_kbps(sum(durations))
+    width, height = _video_dimensions_for_bitrate(bitrate_kbps)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         clip_paths = []
@@ -141,9 +171,9 @@ async def build_video_from_images_and_audio(
                     image_path,
                     "-vf",
                     (
-                        "scale=1920:1080:force_original_aspect_ratio=increase,"
-                        "crop=1920:1080,"
-                        f"zoompan=z='min(zoom+0.0015,1.2)':d={frames}:s=1920x1080:fps=25"
+                        f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+                        f"crop={width}:{height},"
+                        f"zoompan=z='min(zoom+0.0015,1.2)':d={frames}:s={width}x{height}:fps=25"
                     ),
                     "-t",
                     str(duration),

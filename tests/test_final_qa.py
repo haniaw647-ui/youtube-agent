@@ -50,7 +50,10 @@ def test_evaluate_checklist_fails_on_unresolved_license():
 
 def test_evaluate_checklist_fails_on_wrong_resolution():
     result = evaluate_checklist(
-        video_info={"width": 1280, "height": 720, "has_video": True, "has_audio": True},
+        # Not one of the resolution tiers video_assembly can actually
+        # produce (see ffmpeg_utils.VALID_RENDER_DIMENSIONS) — a genuinely
+        # broken/unexpected probe result, not a legitimate downscale.
+        video_info={"width": 100, "height": 100, "has_video": True, "has_audio": True},
         title="Title",
         description="Desc",
         tags=[],
@@ -59,6 +62,21 @@ def test_evaluate_checklist_fails_on_wrong_resolution():
     )
     assert result["passed"] is False
     assert result["checks"]["resolution_ok"] is False
+
+
+def test_evaluate_checklist_accepts_a_downscaled_render_tier():
+    # 720p is a legitimate quality trade-off for a long script under the
+    # storage size budget (see _video_dimensions_for_bitrate) — not a
+    # defect, so it must not fail final_qa's resolution check.
+    result = evaluate_checklist(
+        video_info={"width": 1280, "height": 720, "has_video": True, "has_audio": True},
+        title="Title",
+        description="Desc",
+        tags=[],
+        assets=[],
+        content_flags=[],
+    )
+    assert result["checks"]["resolution_ok"] is True
 
 
 def test_evaluate_checklist_fails_on_missing_audio_stream():

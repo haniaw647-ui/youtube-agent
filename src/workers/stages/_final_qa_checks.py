@@ -1,8 +1,8 @@
+from src.workers.ffmpeg_utils import VALID_RENDER_DIMENSIONS
+
 TITLE_MAX_LENGTH = 100
 DESCRIPTION_MAX_LENGTH = 5000
 TAGS_MAX_COMBINED_LENGTH = 500
-EXPECTED_WIDTH = 1920
-EXPECTED_HEIGHT = 1080
 
 # Any license_type containing one of these markers is treated as unresolved —
 # currently just the Phase 4 music placeholder, but written as a list so a
@@ -35,8 +35,7 @@ def evaluate_checklist(
 
     checks = {
         "resolution_ok": (
-            video_info.get("width") == EXPECTED_WIDTH
-            and video_info.get("height") == EXPECTED_HEIGHT
+            (video_info.get("width"), video_info.get("height")) in VALID_RENDER_DIMENSIONS
         ),
         "has_video_stream": bool(video_info.get("has_video")),
         "has_audio_stream": bool(video_info.get("has_audio")),
