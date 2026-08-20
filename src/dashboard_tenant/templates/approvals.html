@@ -10,10 +10,21 @@
   <h3>{{ item.channel_name }} — {{ item.job_id }} — stage: {{ item.stage }}</h3>
 
   {% if item.detail.candidates %}
+    <p style="color: var(--text-muted); font-size: 0.85rem;">
+      Pick the one you want, then hit Approve — otherwise Approve just accepts the
+      highest-scored candidate automatically.
+    </p>
     <table>
-      <tr><th>Title</th><th>Hook</th><th>Score</th></tr>
+      <tr><th></th><th>Title</th><th>Hook</th><th>Angle</th><th>Score</th></tr>
       {% for c in item.detail.candidates %}
-      <tr><td>{{ c.title }}</td><td>{{ c.hook }}</td><td>{{ c.score }}</td></tr>
+      <tr>
+        <td>
+          <input type="radio" name="selected_topic_id" value="{{ c.id }}"
+                 form="approve-form-{{ item.job_id }}-{{ item.stage }}"
+                 {% if loop.first %}checked{% endif %}>
+        </td>
+        <td>{{ c.title }}</td><td>{{ c.hook }}</td><td>{{ c.angle }}</td><td>{{ c.score }}</td>
+      </tr>
       {% endfor %}
     </table>
   {% endif %}
@@ -53,7 +64,8 @@
     {% endif %}
   {% endif %}
 
-  <form method="post" action="/dashboard/approvals/{{ item.job_id }}/{{ item.stage }}" style="margin-top: 1rem;">
+  <form id="approve-form-{{ item.job_id }}-{{ item.stage }}" method="post"
+        action="/dashboard/approvals/{{ item.job_id }}/{{ item.stage }}" style="margin-top: 1rem;">
     {% if item.stage in revisable_stages %}
       <textarea name="notes" rows="3" placeholder="What should change? Rejecting with notes here regenerates it with your feedback instead of just failing the job."></textarea>
     {% else %}

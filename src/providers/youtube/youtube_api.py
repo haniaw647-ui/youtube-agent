@@ -53,6 +53,7 @@ class YouTubeAPIProvider(YouTubeProvider):
         tags: list[str],
         privacy_status: str,
         thumbnail_bytes: bytes | None = None,
+        publish_at: str | None = None,
     ) -> UploadResult:
         return await asyncio.to_thread(
             self._upload_sync,
@@ -63,6 +64,7 @@ class YouTubeAPIProvider(YouTubeProvider):
             tags,
             privacy_status,
             thumbnail_bytes,
+            publish_at,
         )
 
     def _upload_sync(
@@ -74,12 +76,21 @@ class YouTubeAPIProvider(YouTubeProvider):
         tags: list[str],
         privacy_status: str,
         thumbnail_bytes: bytes | None,
+        publish_at: str | None = None,
     ) -> UploadResult:
         youtube = build("youtube", "v3", credentials=self._credentials(refresh_token))
 
+        # YouTube schedules a video itself once uploaded — no polling/cron
+        # needed on our side. It requires privacyStatus="private" alongside
+        # publishAt (an RFC3339 timestamp); it flips to public automatically
+        # at that instant.
+        status: dict = {"privacyStatus": "private" if publish_at else privacy_status}
+        if publish_at:
+            status["publishAt"] = publish_at
+
         body = {
             "snippet": {"title": title, "description": description, "tags": tags},
-            "status": {"privacyStatus": privacy_status},
+            "status": status,
         }
         media = MediaIoBaseUpload(
             BytesIO(video_bytes), mimetype="video/mp4", resumable=True, chunksize=-1

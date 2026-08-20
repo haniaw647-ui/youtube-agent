@@ -26,6 +26,7 @@ class YouTubeProvider(ABC):
         tags: list[str],
         privacy_status: str,
         thumbnail_bytes: bytes | None = None,
+        publish_at: str | None = None,
     ) -> UploadResult:
         raise NotImplementedError
 

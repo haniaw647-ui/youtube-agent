@@ -1,10 +1,10 @@
 import json
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
@@ -20,7 +20,15 @@ from src.orchestrator.security import decrypt, encrypt, mask
 from src.orchestrator.storage import get_storage_provider
 from src.orchestrator.supabase_auth import SupabaseAuthError, login, request_password_reset, signup
 from src.orchestrator.tenants import ensure_tenant
+from src.orchestrator.youtube_quota import (
+    THUMBNAIL_SET_COST_UNITS,
+    UPLOAD_COST_UNITS,
+    QuotaExceededError,
+    release_quota_reservation,
+    reserve_quota_or_raise,
+)
 from src.providers.storage.base import StorageProvider
+from src.providers.youtube.youtube_api import YouTubeAPIProvider
 from src.workers.scheduler import POSTING_FREQUENCIES
 from src.workers.stage_runner import (
     REJECTION_REVISION_SOURCE_STAGE,
@@ -224,6 +232,7 @@ async def channels_list(
     connected: str | None = None,
     job_error: str | None = None,
     deleted: str | None = None,
+    uploaded: str | None = None,
 ) -> HTMLResponse:
     async with tenant_session(tenant_id) as session:
         channels = (
@@ -249,6 +258,7 @@ async def channels_list(
             "connected": connected,
             "job_error": job_error,
             "deleted": deleted,
+            "uploaded": uploaded,
             "posting_frequencies": list(POSTING_FREQUENCIES.keys()),
         },
     )
@@ -376,6 +386,143 @@ async def create_job_submit(
 
     enqueue_stage(job_id, str(tenant_id), first_stage)
     return RedirectResponse(f"/dashboard/jobs/{job_id}", status_code=303)
+
+
+@router.post("/channels/{channel_id}/upload-video")
+async def upload_video_submit(
+    channel_id: str,
+    video: UploadFile = File(...),
+    title: str = Form(...),
+    description: str = Form(""),
+    tags: str = Form(""),
+    thumbnail: UploadFile | None = File(None),
+    privacy_status: str = Form("private"),
+    publish_at_utc: str = Form(""),
+    tenant_id=Depends(require_tenant),
+) -> RedirectResponse:
+    """A tenant's own already-made video, not something the AI pipeline
+    generated — skips topic_generation..final_qa entirely and reuses only
+    the real, already-built OAuth/resumable-upload plumbing. Still recorded
+    as a `jobs` row (current_stage/overall_status stamped as already 'done')
+    purely to satisfy youtube_videos.job_id's FK and keep it visible
+    alongside AI-generated uploads in analytics — no pipeline stage ever
+    runs against it."""
+    async with tenant_session(tenant_id) as session:
+        channel = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT youtube_refresh_token_encrypted FROM channels WHERE id = :id"
+                    ),
+                    {"id": channel_id},
+                )
+            )
+            .mappings()
+            .first()
+        )
+    if channel is None:
+        return RedirectResponse(
+            "/dashboard/channels?job_error=Channel+not+found", status_code=303
+        )
+    if not channel["youtube_refresh_token_encrypted"]:
+        return RedirectResponse(
+            "/dashboard/channels?job_error="
+            + quote("Connect a YouTube account for this channel before uploading."),
+            status_code=303,
+        )
+
+    video_bytes = await video.read()
+    thumbnail_bytes = (
+        await thumbnail.read() if thumbnail is not None and thumbnail.filename else None
+    )
+    tags_list = [t.strip() for t in tags.split(",") if t.strip()]
+    # A disabled <select> (see channels.html — scheduling disables it
+    # client-side) simply isn't submitted by the browser, so an empty
+    # publish_at_utc is the only signal needed for "publish now" vs
+    # "scheduled"; privacy_status's Form default covers the missing field.
+    publish_at = publish_at_utc.strip() or None
+
+    async with tenant_session(tenant_id) as session:
+        seq = (await session.execute(text("SELECT nextval('job_id_seq')"))).scalar_one()
+        job_id = f"job_{datetime.now().year}_{seq:05d}"
+        await session.execute(
+            text(
+                "INSERT INTO jobs "
+                "(id, tenant_id, channel_id, current_stage, overall_status, title, "
+                " description, tags) "
+                "VALUES (:id, :tenant_id, :channel_id, 'youtube_upload', 'done', :title, "
+                " :description, :tags)"
+            ),
+            {
+                "id": job_id,
+                "tenant_id": tenant_id,
+                "channel_id": channel_id,
+                "title": title,
+                "description": description or None,
+                "tags": json.dumps(tags_list),
+            },
+        )
+        await session.commit()
+
+    upload_cost = UPLOAD_COST_UNITS + (THUMBNAIL_SET_COST_UNITS if thumbnail_bytes else 0)
+    try:
+        reservation_id = await reserve_quota_or_raise(
+            str(tenant_id), job_id, "videos.insert", upload_cost
+        )
+    except QuotaExceededError as e:
+        return RedirectResponse(f"/dashboard/channels?job_error={quote(str(e))}", status_code=303)
+
+    try:
+        refresh_token = decrypt(channel["youtube_refresh_token_encrypted"])
+        provider = YouTubeAPIProvider()
+        result = await provider.upload_video(
+            refresh_token=refresh_token,
+            video_bytes=video_bytes,
+            title=title,
+            description=description,
+            tags=tags_list,
+            privacy_status=privacy_status,
+            thumbnail_bytes=thumbnail_bytes,
+            publish_at=publish_at,
+        )
+    except Exception as e:
+        await release_quota_reservation(reservation_id)
+        return RedirectResponse(
+            f"/dashboard/channels?job_error={quote(f'Upload failed: {e}')}", status_code=303
+        )
+
+    async with tenant_session(tenant_id) as session:
+        await session.execute(
+            text(
+                "INSERT INTO youtube_videos "
+                "(tenant_id, job_id, channel_id, youtube_video_id, url, "
+                " scheduled_publish_at, uploaded_at, status) "
+                "VALUES (:tenant_id, :job_id, :channel_id, :video_id, :url, "
+                " :scheduled_publish_at, now(), :status)"
+            ),
+            {
+                "tenant_id": tenant_id,
+                "job_id": job_id,
+                "channel_id": channel_id,
+                "video_id": result.video_id,
+                "url": result.url,
+                "scheduled_publish_at": (
+                    # naive-UTC, matching every other timestamp column in
+                    # this schema (see timeutil.utcnow_naive) — asyncpg
+                    # rejects a tz-aware value against `timestamp without
+                    # time zone`.
+                    datetime.fromisoformat(publish_at.replace("Z", "+00:00"))
+                    .astimezone(UTC)
+                    .replace(tzinfo=None)
+                    if publish_at
+                    else None
+                ),
+                "status": "scheduled" if publish_at else "uploaded",
+            },
+        )
+        await session.commit()
+
+    return RedirectResponse("/dashboard/channels?uploaded=1", status_code=303)
 
 
 @router.get("/jobs", response_class=HTMLResponse)
@@ -544,7 +691,7 @@ async def approvals_list(request: Request, tenant_id=Depends(require_tenant)) ->
                     (
                         await session.execute(
                             text(
-                                "SELECT title, hook, angle, score FROM topics "
+                                "SELECT id, title, hook, angle, score FROM topics "
                                 "WHERE job_id = :job_id AND status = 'candidate' "
                                 "ORDER BY score DESC"
                             ),
@@ -739,6 +886,7 @@ async def approve_submit(
     stage: str,
     decision: str = Form(...),
     notes: str = Form(""),
+    selected_topic_id: str = Form(""),
     tenant_id=Depends(require_tenant),
 ) -> RedirectResponse:
     notes_clean: str | None = notes.strip() or None
@@ -753,6 +901,13 @@ async def approve_submit(
     # the worker never reads the notes before they're actually committed)
     # agree on the outcome.
     can_revise = bool(notes_clean) and stage in REJECTION_REVISION_SOURCE_STAGE
+    # A human picking a specific candidate (approvals.html's radio buttons,
+    # defaulted to the top-scored one) bypasses topic_scoring.py's own
+    # highest-score auto-pick entirely — previously "Approve" only ever meant
+    # "let the algorithm decide", with no way to actually choose which video
+    # gets made even with the gate on.
+    topic_id_clean = selected_topic_id.strip() or None
+    topic_override = stage == "topic_scoring" and decision == "approved" and topic_id_clean
 
     async with tenant_session(tenant_id) as session:
         pending = (
@@ -780,14 +935,33 @@ async def approve_submit(
             await session.execute(
                 text("DELETE FROM job_stages WHERE id = :id"), {"id": pending["id"]}
             )
-            if decision != "approved" and not can_revise:
+            if topic_override:
+                await session.execute(
+                    text(
+                        "UPDATE topics SET status = 'rejected' WHERE job_id = :job_id "
+                        "AND status = 'candidate'"
+                    ),
+                    {"job_id": job_id},
+                )
+                await session.execute(
+                    text("UPDATE topics SET status = 'selected' WHERE id = :id"),
+                    {"id": topic_id_clean},
+                )
+                await session.execute(
+                    text("UPDATE jobs SET topic_id = :topic_id WHERE id = :job_id"),
+                    {"topic_id": topic_id_clean, "job_id": job_id},
+                )
+            elif decision != "approved" and not can_revise:
                 await session.execute(
                     text("UPDATE jobs SET overall_status = 'failed' WHERE id = :job_id"),
                     {"job_id": job_id},
                 )
 
     if pending is not None:
-        if decision == "approved":
+        if topic_override:
+            next_stage = PIPELINE_STAGES[PIPELINE_STAGES.index("topic_scoring") + 1]
+            enqueue_stage(job_id, str(tenant_id), next_stage)
+        elif decision == "approved":
             await resume_after_approval(job_id, str(tenant_id), stage)
         elif can_revise:
             resume_after_rejection_with_feedback(job_id, str(tenant_id), stage)

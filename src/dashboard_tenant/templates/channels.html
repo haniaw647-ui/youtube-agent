@@ -6,6 +6,7 @@
 {% if error %}<p class="error">Connection failed ({{ error }}). Please try again.</p>{% endif %}
 {% if job_error %}<p class="error">{{ job_error }}</p>{% endif %}
 {% if deleted %}<p class="success">Channel deleted.</p>{% endif %}
+{% if uploaded %}<p class="success">Video uploaded.</p>{% endif %}
 
 <div class="card">
   <h3>New channel</h3>
@@ -93,6 +94,46 @@
   </form>
   <a href="/dashboard/jobs?channel_id={{ c.id }}">View jobs for this channel</a>
 
+  {% if c.youtube_channel_id %}
+  <div class="card" style="margin-top: 1rem; background: var(--bg);">
+    <h3 style="font-size: 0.95rem;">Upload your own video</h3>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0.2rem 0 0.6rem;">
+      Bring a video you already made — skips the AI pipeline entirely and just uploads/schedules
+      it to this channel.
+    </p>
+    <form method="post" action="/dashboard/channels/{{ c.id }}/upload-video"
+          enctype="multipart/form-data" onsubmit="return prepareScheduledPublish(this)">
+      <input type="file" name="video" accept="video/*" required>
+      <input type="text" name="title" placeholder="Title" required>
+      <textarea name="description" placeholder="Description" rows="2"></textarea>
+      <input type="text" name="tags" placeholder="Tags (comma separated)">
+      <label style="display: block; margin: 0.4rem 0;">
+        Thumbnail (optional): <input type="file" name="thumbnail" accept="image/*">
+      </label>
+
+      <label style="display: block;">
+        <input type="radio" name="publish_mode" value="now" checked
+               onchange="toggleScheduleFields(this)" style="width: auto; margin-right: 0.4rem;">
+        Publish now as:
+        <select name="privacy_status" style="width: auto; display: inline-block;">
+          <option value="private">Private</option>
+          <option value="unlisted">Unlisted</option>
+          <option value="public">Public</option>
+        </select>
+      </label>
+      <label style="display: block; margin: 0.4rem 0;">
+        <input type="radio" name="publish_mode" value="schedule"
+               onchange="toggleScheduleFields(this)" style="width: auto; margin-right: 0.4rem;">
+        Schedule for later:
+        <input type="datetime-local" name="publish_at_local" disabled style="width: auto; display: inline-block;">
+      </label>
+      <input type="hidden" name="publish_at_utc" value="">
+
+      <button type="submit">Upload</button>
+    </form>
+  </div>
+  {% endif %}
+
   <form method="post" action="/dashboard/channels/{{ c.id }}/delete" style="margin-top: 1rem;"
         onsubmit="return confirm('Delete {{ c.name }}? This permanently removes the channel and all of its jobs, videos, and history. This cannot be undone.');">
     <button type="submit" style="background: var(--danger, #c0392b); border-color: var(--danger, #c0392b);">
@@ -101,4 +142,32 @@
   </form>
 </div>
 {% endfor %}
+
+<script>
+  function toggleScheduleFields(radio) {
+    const form = radio.form;
+    const dtInput = form.querySelector('input[name="publish_at_local"]');
+    const privacySelect = form.querySelector('select[name="privacy_status"]');
+    const scheduling = radio.value === 'schedule';
+    dtInput.disabled = !scheduling;
+    privacySelect.disabled = scheduling;
+  }
+  function prepareScheduledPublish(form) {
+    const mode = form.querySelector('input[name="publish_mode"]:checked').value;
+    if (mode === 'schedule') {
+      const localVal = form.querySelector('input[name="publish_at_local"]').value;
+      if (!localVal) {
+        alert('Pick a date/time to schedule for.');
+        return false;
+      }
+      const local = new Date(localVal);
+      if (local.getTime() <= Date.now()) {
+        alert('Pick a time in the future.');
+        return false;
+      }
+      form.querySelector('input[name="publish_at_utc"]').value = local.toISOString();
+    }
+    return true;
+  }
+</script>
 {% endblock %}

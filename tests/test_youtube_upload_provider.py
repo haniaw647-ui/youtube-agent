@@ -56,3 +56,30 @@ async def test_upload_video_skips_thumbnail_when_none_given():
 
     assert result.video_id == "xyz"
     mock_youtube.thumbnails.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_upload_video_with_publish_at_forces_private_and_sets_publish_at():
+    mock_youtube = MagicMock()
+    mock_youtube.videos.return_value.insert.return_value.execute.return_value = {"id": "sched1"}
+
+    with (
+        patch("src.providers.youtube.youtube_api.build", return_value=mock_youtube),
+        patch("src.providers.youtube.youtube_api.Credentials"),
+    ):
+        provider = YouTubeAPIProvider()
+        await provider.upload_video(
+            refresh_token="fake",
+            video_bytes=b"data",
+            title="T",
+            description="D",
+            tags=[],
+            # A public request should still get overridden to private —
+            # YouTube requires that pairing for a scheduled publish.
+            privacy_status="public",
+            publish_at="2026-09-01T12:00:00Z",
+        )
+
+    insert_kwargs = mock_youtube.videos.return_value.insert.call_args.kwargs
+    assert insert_kwargs["body"]["status"]["privacyStatus"] == "private"
+    assert insert_kwargs["body"]["status"]["publishAt"] == "2026-09-01T12:00:00Z"
